@@ -3,318 +3,344 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>UK Local Authority Choropleth (2023 LAD) — Emissions per £1m GVA (2015-25)</title>
+  <title>ENERGY USED TO PRODUCE £1m GVA by GB LOCAL AUTHORITY (2015-2023)</title>
+
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous" />
-
-  <!-- External libs (defer; no SRI to avoid blocking) -->
+  <!-- Leaflet + PapaParse (defer) -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer crossorigin="anonymous"></script>
   <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js" defer></script>
 
   <style>
-    :root {
-      --bg: #0b0f19; --panel: #141a2a; --text: #e8ecf3; --muted: #9aa5b1; --accent: #4f8cff; --accent-2: #22c55e; --border: #22314f;
-    }
-    html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
-    #app { display: grid; grid-template-columns: 320px 1fr; grid-template-rows: auto 1fr; height: 100%; }
-    header { grid-column: 1 / -1; padding: 12px 16px; border-bottom: 1px solid var(--border); background: linear-gradient(180deg, #0c1222, #0b0f19); display: flex; align-items: center; gap: 12px; }
-    header h1 { font-size: 18px; font-weight: 600; margin: 0; }
-    header .sub { color: var(--muted); font-size: 12px; }
-    aside { border-right: 1px solid var(--border); background: var(--panel); padding: 14px; overflow: auto; }
-    .group { margin-bottom: 16px; }
-    .group label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-    select, input[type="number"], input[type="text"], button { width: 100%; background: #0e1424; color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; font-size: 14px; }
-    button.primary { background: var(--accent); border-color: #3f77dd; color: white; cursor: pointer; }
-    button.ghost { background: transparent; border-color: var(--border); cursor: pointer; }
-    button:disabled { opacity: 0.6; cursor: not-allowed; }
-    #map { height: 100%; width: 100%; }
-    .legend { position: absolute; bottom: 16px; right: 16px; background: rgba(20,26,42,0.9); border: 1px solid var(--border); color: var(--text); padding: 10px 12px; border-radius: 12px; font-size: 12px; line-height: 1.2; box-shadow: 0 10px 24px rgba(0,0,0,0.25); }
-    .legend .row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
-    .swatch { width: 16px; height: 12px; border-radius: 2px; border: 1px solid rgba(255,255,255,0.1); }
-    .tooltip { background: rgba(20,26,42,0.96); border: 1px solid var(--border); color: var(--text); padding: 10px 12px; border-radius: 10px; font-size: 12px; box-shadow: 0 10px 24px rgba(0,0,0,0.25); }
-    .note { font-size: 12px; color: var(--muted); }
-    .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
-    .kpi { background: #0e1424; border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px; }
-    .kpi .v { font-size: 16px; font-weight: 600; }
-    .footer { font-size: 12px; color: var(--muted); margin-top: 8px; }
-    .file-row { display:flex; align-items:center; gap:8px; }
-    .range-row { display:flex; align-items:center; gap:10px; }
-    .range-row input[type="range"] { flex: 1; }
-    a { color: var(--accent-2); text-decoration: none; }
+    :root { --bg:#0b0f19; --panel:#212F47; --text:#e8ecf3; --muted:#c3ccda; --accent:#4f8cff; --border:#2f3e5b; }
+ html, body {
+  height: 100%;
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* --- Header: restore style --- */
+header {
+  grid-column: 1 / -1;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);         /* your navy #212F47 */
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+header h1 {
+  margin: 0;
+  font-weight: 800;
+  font-size: 22px;                  /* restore size */
+  letter-spacing: .5px;
+  text-transform: uppercase;        /* BIG CAPS */
+  color: var(--text);               /* ensure visible on navy */
+}
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand img { width: 40px; height: 40px; border-radius: 50%; border: 2px solid rgba(255,255,255,.08); object-fit: cover; }
+.brand .sub { color: var(--muted); font-size: 12px; }
+
+/* --- KPI: restore “Year” box look --- */
+.kpis {
+  display: grid;
+  grid-template-columns: 1fr;       /* one KPI since you removed Matched */
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.kpi {
+  background: #0e1424;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 10px;
+}
+.kpi .l {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.kpi .v {
+  font-size: 18px;                  /* bump for emphasis */
+  font-weight: 700;
+  color: var(--text);
+}
+
+#app {
+  display: grid;
+  grid-template-columns: 360px 1fr;   /* widened sidebar */
+  grid-template-rows: auto 1fr;
+  height: 100%;
+}
+
+/* Ensure the map container actually has height */
+main { position: relative; }
+#map { height: 100%; width: 100%; min-height: 400px; }
+
+/* Sidebar */
+aside {
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  padding: 14px;
+  overflow-y: auto;
+  overflow-x: hidden;                 /* no horizontal scroll */
+}
+
+/* Header (unchanged from yours) */
+header { grid-column: 1 / -1; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--panel); display: flex; align-items: center; gap: 12px; }
+header h1 { font-size: 22px; letter-spacing: .5px; font-weight: 800; margin: 0; text-transform: uppercase; }
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand img { width: 40px; height: 40px; border-radius: 50%; border: 2px solid rgba(255,255,255,.08); object-fit: cover; }
+.brand .sub { color: var(--muted); font-size: 12px; }
+
+/* Controls */
+.group { margin-bottom: 16px; }
+.group label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+
+input[type="range"],
+input[type="number"],
+button,
+select {
+  width: 100%;
+  max-width: 100%;        /* never wider than sidebar */
+  box-sizing: border-box;
+  background: #0e1424;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+    .legend{position:absolute;bottom:16px;right:16px;background:rgba(20,26,42,.96);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:12px;font-size:12px;line-height:1.2;box-shadow:0 10px 24px rgba(0,0,0,.25);z-index:1000;pointer-events:none}
+    .legend .row{display:flex;align-items:center;gap:8px;margin:4px 0}
+    .swatch{width:16px;height:12px;border-radius:2px;border:1px solid rgba(255,255,255,.1)}
+    .tooltip{background:rgba(20,26,42,.96);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:10px;font-size:12px;box-shadow:0 10px 24px rgba(0,0,0,.25)}
+    .note{font-size:12px;color:var(--muted)}
+    .kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px}
+    .kpi{background:#0e1424;border:1px solid var(--border);border-radius:12px;padding:8px 10px}
+    .kpi .v{font-size:16px;font-weight:600}
+    .row-inline{display:flex;gap:8px;align-items:center}
   </style>
 </head>
 <body>
   <div id="app">
     <header>
-      <h1>EMISSIONS PER £1m GVA BY UK LOCAL AUTHORITY (2015–2023)</h1>
-<div class="sub">ONS LAD 2023&nbsp;·&nbsp;interactive choropleth</div>
+      <div class="brand">
+        <img src="/data/logo.png" alt="logo" />
+        <div>
+          <h1>ENERGY USED TO PRODUCE £1m GVA BY GB LOCAL AUTHORITY (2015-2023)</h1>
+          <div class="sub">ONS LAD 2023&#160;·&#160;interactive choropleth</div>
+        </div>
+      </div>
     </header>
-    <aside>
-      <div class="group kpis">
-        <div class="kpi"><div class="l">Areas</div><div class="v" id="kpi-areas">—</div></div>
-        <div class="kpi"><div class="l">Year</div><div class="v" id="kpi-year">—</div></div>
-      </div>
-      <div class="group">
-        <label>GeoJSON (ONS LAD 2023)</label>
-        <div class="file-row">
-          <input id="geojsonUrl" type="text" placeholder="/data/lad_2023.geojson" value="/data/lad_2023.geojson" />
-          <button id="loadGeo" class="ghost">Load</button>
-        </div>
-        <div class="note">Default props: <code>LAD23CD</code> (code), <code>LAD23NM</code> (name). If your file differs, set below.</div>
-        <div class="file-row" style="margin-top:6px; gap:6px;">
-          <input id="codeProp" type="text" value="LAD23CD" title="GeoJSON code property"/>
-          <input id="nameProp" type="text" value="LAD23NM" title="GeoJSON name property"/>
-          <button id="detectProps" class="ghost" title="Auto-detect from file">Detect</button>
-        </div>
-        <div id="geoStatus" class="note">GeoJSON: <span id="geoMsg">not loaded</span></div>
-      </div>
-      <div class="group">
-        <label>Data CSV (LA × Year × Metric)</label>
-        <div class="file-row">
-          <input id="csvUrl" type="text" placeholder="/data/data.csv" value="/data/data.csv" />
-          <button id="loadCsv" class="ghost">Load</button>
-        </div>
-        <div class="file-row" style="margin-top:6px; gap:6px;">
-          <input id="csvCode" type="text" value="CODE" title="CSV column: code"/>
-          <input id="csvYear" type="text" value="YEAR" title="CSV column: year"/>
-          <input id="csvValue" type="text" value="VALUE" title="CSV column: value"/>
-        </div>
-        <div id="csvStatus" class="note">CSV: <span id="csvMsg">not loaded</span></div>
-      </div>
-      <div class="group">
-        <label>Year</label>
-        <div class="range-row">
-          <input id="yearRange" type="range" min="2015" max="2025" step="1" value="2018"/>
-          <input id="yearInput" type="number" min="2015" max="2025" step="1" value="2018"/>
-        </div>
-      </div>
-      <div class="group">
-        <label>Colour scale</label>
-        <select id="scaleMode">
-          <option value="quantile" selected>Quantiles (equal count)</option>
-          <option value="equal">Equal intervals</option>
-        </select>
-      </div>
-      <div class="group" style="display:flex; gap:8px;">
-        <button id="fitBtn" class="primary">Fit to UK</button>
-        <button id="refreshBtn" class="ghost">Refresh</button>
-      </div>
-      <div class="footer">
-        <div class="note">Example CSV:
-          <pre>CODE,YEAR,VALUE
-E06000063,2018,0.123
-E06000064,2018,0.087
-...</pre>
-        </div>
-      </div>
-    </aside>
+
+   <aside>
+  <div class="group kpis">
+    <div class="kpi">
+      <div class="l">Year</div>
+      <div class="v" id="kpi-year">—</div>
+    </div>
+  </div>
+
+  <div class="group">
+    <label>Year</label>
+    <input id="yearRange" type="range" min="2015" max="2025" step="1" value="2023"/>
+    <input id="yearInput" type="number" min="2015" max="2025" step="1" value="2023" style="margin-top:6px;"/>
+  </div>
+
+  <div class="group">
+  <label>Metric</label>
+  <select id="metricMode">
+    <option value="total" selected>Total GHG (CO₂e)</option>
+    <option value="co2">CO₂</option>
+    <option value="ch4">CH₄</option>
+    <option value="n2o">N₂O</option>
+  </select>
+</div>
+
+
+  <div class="group row-inline">
+    <button id="playBtn" class="primary" style="flex:1;">▶ Play year</button>
+    <button id="fitBtn" class="primary" style="flex:1;">Reset map</button>
+  </div>
+</aside>
+
+
     <main style="position:relative;">
       <div id="map"></div>
-      <div id="legend" class="legend" hidden></div>
+      <div id="legend" class="legend"></div>
     </main>
   </div>
 
   <script defer>
-    // ======= Config =======
-    let CODE_PROP = 'LAD23CD'; // editable via sidebar
-    let NAME_PROP = 'LAD23NM';
-    let CSV_CODE = 'CODE';
-    let CSV_YEAR = 'YEAR';
-    let CSV_VALUE = 'VALUE';
+  // Config
+  const GEOJSON_URL = '/data/lad_2023.geojson';
+  const CSV_URL = '/data/data.csv';
+  const CODE_PROP = 'LAD23CD';
+  const NAME_PROP = 'LAD23NM';
+  const CSV_CODE = 'CODE';
+  const CSV_YEAR = 'YEAR';
+  const CSV_VALUE = 'VALUE';
 
-    // Colour palette (light to dark)
-    const PALETTE = ['#eef3ff','#d9e4ff','#bcd0ff','#98b8ff','#719bff','#4f80ff','#2a63ff','#1249ef'];
+  const PALETTE = ['#eef3ff','#d9e4ff','#bcd0ff','#98b8ff','#719bff','#4f80ff','#2a63ff','#1249ef'];
+  const NO_DATA_FILL = '#3a4258';
 
-    // ======= State =======
-    let map, layer, geo, dataRows = [], year = 2018;
+  let map, layer, geo, dataRows = [], year = 2023, metricMode = 'ktoe', timer = null, yearBounds = [2015,2025];
 
-    // ======= Init map =======
-    function init() {
-      map = L.map('map', { preferCanvas: true }).setView([54.5, -3], 6);
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OpenStreetMap, &copy; CARTO' }).addTo(map);
-
-      document.getElementById('loadGeo').addEventListener('click', loadGeo);
-      document.getElementById('detectProps').addEventListener('click', detectProps);
-      document.getElementById('loadCsv').addEventListener('click', loadCsv);
-      document.getElementById('refreshBtn').addEventListener('click', render);
-      document.getElementById('fitBtn').addEventListener('click', fitUK);
-
-      const yrRange = document.getElementById('yearRange');
-      const yrInput = document.getElementById('yearInput');
-      yrRange.addEventListener('input', (e)=> { year = +e.target.value; yrInput.value = year; render(); });
-      yrInput.addEventListener('input', (e)=> { year = +e.target.value; yrRange.value = year; render(); });
-
-      // Auto-load defaults
-      loadGeo();
-      loadCsv();
+  // NEW: fixed breaks across all years
+  let globalBreaks = [];
+  function computeGlobalBreaks() {
+    if (!dataRows.length) { globalBreaks = []; return; }
+    const all = [];
+    for (const r of dataRows) {
+      const v = toMetric(+r[CSV_VALUE]);
+      if (Number.isFinite(v)) all.push(v);
     }
+    globalBreaks = getQuantileBreaks(all, PALETTE.length);
+  }
 
-    // ======= Load GeoJSON =======
-    async function loadGeo() {
-      const url = document.getElementById('geojsonUrl').value.trim();
-      CODE_PROP = document.getElementById('codeProp').value.trim() || CODE_PROP;
-      NAME_PROP = document.getElementById('nameProp').value.trim() || NAME_PROP;
-      setGeoMsg('loading …');
-      try {
-        const res = await fetch(url, { cache: 'no-store' });
-        if (!res.ok) throw new Error('GeoJSON fetch failed: ' + res.status);
-        geo = await res.json();
-        if (!geo || !geo.features || !geo.features.length) throw new Error('GeoJSON has no features');
-        if (layer) { layer.remove(); }
-        layer = L.geoJSON(geo, { style: baseStyle, onEachFeature: (f, l) => { l.on({ mouseover: highlight, mouseout: reset, click: zoomTo }); } }).addTo(map);
-        fitUK();
-        document.getElementById('kpi-areas').textContent = geo.features.length;
-        setGeoMsg(`loaded (${geo.features.length} features)`);
-        render();
-      } catch (e) {
-        console.error(e);
-        setGeoMsg('error: ' + e.message);
-        alert(e.message);
-      }
-    }
+  function init(){
+    map = L.map('map', {
+      preferCanvas: true,
+      zoomControl: true,
+      zoomSnap: 0.25,
+      zoomDelta: 0.5
+    }).setView([54.5, -3], 6);
 
-    function setGeoMsg(msg){ document.getElementById('geoMsg').textContent = msg; }
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution:'&copy; OpenStreetMap, &copy; CARTO' }).addTo(map);
 
-    function detectProps(){
-      if (!geo || !geo.features || !geo.features.length) { alert('Load GeoJSON first'); return; }
-      const props = geo.features[0].properties || {};
-      const keys = Object.keys(props);
-      const codeGuess = keys.find(k => /LAD.*CD/i.test(k)) || keys.find(k => /(code|cd)$/i.test(k)) || CODE_PROP;
-      const nameGuess = keys.find(k => /LAD.*NM/i.test(k)) || keys.find(k => /(name|nm)$/i.test(k)) || NAME_PROP;
-      document.getElementById('codeProp').value = codeGuess;
-      document.getElementById('nameProp').value = nameGuess;
-      CODE_PROP = codeGuess; NAME_PROP = nameGuess;
+    document.getElementById('fitBtn').addEventListener('click', fitUK);
+    document.getElementById('playBtn').addEventListener('click', togglePlay);
+    document.getElementById('metricMode').addEventListener('change', e=>{
+      metricMode = e.target.value;
+      computeGlobalBreaks();     // recompute fixed scale when unit changes
       render();
-    }
+    });
 
-    // ======= Load CSV =======
-    function loadCsv() {
-      const url = document.getElementById('csvUrl').value.trim();
-      CSV_CODE = document.getElementById('csvCode').value.trim() || CSV_CODE;
-      CSV_YEAR = document.getElementById('csvYear').value.trim() || CSV_YEAR;
-      CSV_VALUE = document.getElementById('csvValue').value.trim() || CSV_VALUE;
-      setCsvMsg('loading …');
-      Papa.parse(url, {
-        download: true,
-        header: true,
-        dynamicTyping: true,
-        skipEmptyLines: true,
-        complete: (results) => {
-          dataRows = (results.data || []).filter(r => r[CSV_CODE] != null && r[CSV_YEAR] != null);
-          if (dataRows.length) {
-            const yrs = Array.from(new Set(dataRows.map(r => +r[CSV_YEAR]))).filter(x=>Number.isFinite(x)).sort((a,b)=>a-b);
-            if (yrs.length) {
-              const minY = Math.min(...yrs), maxY = Math.max(...yrs);
-              const yrRange = document.getElementById('yearRange');
-              const yrInput = document.getElementById('yearInput');
-              yrRange.min = minY; yrRange.max = maxY; yrInput.min = minY; yrInput.max = maxY;
-              if (+yrRange.value < minY || +yrRange.value > maxY) { yrRange.value = minY; yrInput.value = minY; year = minY; }
-            }
+    const yrRange = document.getElementById('yearRange');
+    const yrInput = document.getElementById('yearInput');
+    yrRange.addEventListener('input', e=>{ year = +e.target.value; yrInput.value = year; render(); });
+    yrInput.addEventListener('input', e=>{ year = +e.target.value; yrRange.value = year; render(); });
+
+    loadGeo();
+    loadCsv();
+  }
+
+  async function loadGeo(){
+    const res = await fetch(GEOJSON_URL, { cache:'no-store' });
+    if(!res.ok) throw new Error('GeoJSON fetch failed: '+res.status);
+    geo = await res.json();
+    if(layer) layer.remove();
+    layer = L.geoJSON(geo, { style: baseStyle, onEachFeature: bindFeature }).addTo(map);
+    fitUK();
+    render();
+  }
+
+  function loadCsv(){
+    Papa.parse(CSV_URL, { download:true, header:true, dynamicTyping:true, skipEmptyLines:true,
+      complete: (results)=>{
+        dataRows = (results.data||[]).filter(r=> r[CSV_CODE]!=null && r[CSV_YEAR]!=null);
+        if(dataRows.length){
+          const yrs = [...new Set(dataRows.map(r=>+r[CSV_YEAR]))].filter(x=>Number.isFinite(x)).sort((a,b)=>a-b);
+          if(yrs.length){
+            yearBounds = [Math.min(...yrs), Math.max(...yrs)];
+            const [minY,maxY] = yearBounds; const yrRange = document.getElementById('yearRange'); const yrInput = document.getElementById('yearInput');
+            yrRange.min=minY; yrRange.max=maxY; yrInput.min=minY; yrInput.max=maxY;
+            if(+yrRange.value<minY || +yrRange.value>maxY){ yrRange.value=minY; yrInput.value=minY; year=minY; }
           }
-          setCsvMsg(`loaded (${dataRows.length} rows)`);
-          render();
-        },
-        error: (err) => { console.error(err); setCsvMsg('error: ' + (err?.message||'parse failed')); alert('CSV load failed'); }
-      });
-    }
-
-    function setCsvMsg(msg){ document.getElementById('csvMsg').textContent = msg; }
-
-    // ======= Styles & Interactions =======
-    function baseStyle() { return { color: '#1e2a44', weight: 0.6, fillColor: '#506288', fillOpacity: 0.7 }; }
-    function highlight(e) { const layer = e.target; layer.setStyle({ weight: 2, color: '#ffffff', fillOpacity: 0.85 }); if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) layer.bringToFront(); showTooltip(layer); }
-    function reset(e) { layer.resetStyle(e.target); hideTooltip(); }
-    function zoomTo(e) { map.fitBounds(e.target.getBounds(), { maxZoom: 9 }); }
-
-    // ======= Data join & rendering =======
-    function getYearValues(y) {
-      const m = new Map();
-      for (const r of dataRows) { if (+r[CSV_YEAR] === +y) { m.set(String(r[CSV_CODE]).trim(), +r[CSV_VALUE]); } }
-      return m;
-    }
-
-    function getBreaks(values, mode = 'quantile', k = PALETTE.length) {
-      const v = values.filter(x => Number.isFinite(x)).slice().sort((a,b)=>a-b);
-      if (!v.length) return [];
-      if (mode === 'equal') {
-        const min = v[0], max = v[v.length-1];
-        const step = (max - min) / k; return Array.from({length:k+1}, (_,i)=> min + i*step);
-      } else {
-        const qs = []; for (let i=0; i<=k; i++) { const p = i / k; const idx = Math.floor(p * (v.length-1)); qs.push(v[idx]); }
-        return qs;
-      }
-    }
-
-   const NO_DATA_FILL = '#3a4258'; // solid fallback that shows up on dark basemap
-
-function colorFor(val, breaks) {
-  if (!Number.isFinite(val) || !breaks.length) {
-    return NO_DATA_FILL; // solid, not a CSS gradient
+        }
+        computeGlobalBreaks();    // NEW: set fixed scale once data are in
+        render();
+      }, error: (err)=>{ console.error(err); alert('CSV load failed'); }
+    });
   }
-  const k = PALETTE.length;
-  for (let i = 0; i < k; i++) {
-    if (val <= breaks[i + 1]) return PALETTE[i];
+
+  function baseStyle(){ return { color:'#1e2a44', weight:0.6, fillColor:NO_DATA_FILL, fillOpacity:0.9 } }
+
+  function bindFeature(f, l){
+    l.on({ mouseover: onHover, mouseout: onOut, click: ()=> map.fitBounds(l.getBounds(), { maxZoom:9 }) });
+    l._currentFill = NO_DATA_FILL;
   }
-  return PALETTE[k - 1];
-}
 
+  function onHover(e){ const l=e.target; l.setStyle({ weight:2, color:'#ffffff', fillColor:l._currentFill, fillOpacity:1 }); if(l.openTooltip) l.openTooltip(); }
+  function onOut(e){ const l=e.target; l.setStyle({ weight:0.6, color:'#1e2a44', fillColor:l._currentFill, fillOpacity:0.9 }); }
 
-    function render() {
-      if (!map || !layer || !geo) return;
-      const yrVals = getYearValues(year);
-      document.getElementById('kpi-year').textContent = year;
+  function getYearValues(y){ const m=new Map(); for(const r of dataRows){ if(+r[CSV_YEAR]===+y){ m.set(String(r[CSV_CODE]).trim(), +r[CSV_VALUE]); } } return m; }
 
-      const vals = [];
-      for (const f of geo.features) {
-        const code = String(f.properties[CODE_PROP]).trim();
-        const v = yrVals.get(code); if (Number.isFinite(v)) vals.push(v);
-      }
-      const mode = document.getElementById('scaleMode').value;
-      const breaks = getBreaks(vals, mode, PALETTE.length);
+  function getQuantileBreaks(values, k=PALETTE.length){
+    const v=values.filter(x=>Number.isFinite(x)).slice().sort((a,b)=>a-b);
+    if(!v.length) return [];
+    const qs=[];
+    for(let i=0;i<=k;i++){ const p=i/k; const idx=Math.floor(p*(v.length-1)); qs.push(v[idx]); }
+    return qs;
+  }
 
-      layer.eachLayer(l => {
-        const f = l.feature;
-        const code = String(f.properties[CODE_PROP]).trim();
-        const name = String(f.properties[NAME_PROP]);
-        const v = yrVals.get(code);
-        const fill = colorFor(v, breaks);
-        l.setStyle({ fillColor: fill });
-        l.bindTooltip(tooltipHtml(name, code, v), { sticky: true, opacity: 0.95, className: 'tooltip' });
-      });
-// --- debug: show match stats
-let matched = 0, total = 0;
-for (const f of geo.features) {
-  total++;
-  const code = String(f.properties[CODE_PROP]).trim();
-  if (yrVals.has(code)) matched++;
-}
-console.log(`Year ${year}: matched ${matched}/${total} polygons`);
-document.getElementById('kpi-areas').textContent = `${matched}/${total}`;
+  function toMetric(val){ if(!Number.isFinite(val)) return val; return metricMode==='gwh' ? val*11.63 : val; }
+  function metricLabel(){ return metricMode==='gwh' ? 'GWh per £1m GVA' : 'ktoe per £1m GVA'; }
 
+  function colorFor(val, breaks){
+    if(!Number.isFinite(val) || !breaks.length) return NO_DATA_FILL;
+    for(let i=0;i<PALETTE.length;i++){ if(val<=breaks[i+1]) return PALETTE[i]; }
+    return PALETTE[PALETTE.length-1];
+  }
 
-      updateLegend(breaks);
+  function render(){
+    if(!map || !layer || !geo) return;
+    document.getElementById('kpi-year').textContent = year;
+
+    // Ensure fixed breaks exist (in case render fires before CSV finished)
+    if (!globalBreaks.length) computeGlobalBreaks();
+    const breaks = globalBreaks;
+
+    const yrValsRaw = getYearValues(year);
+
+    layer.eachLayer(l=>{
+      const f=l.feature; const code=String(f.properties[CODE_PROP]).trim(); const name=String(f.properties[NAME_PROP]);
+      const v = toMetric(yrValsRaw.get(code));
+      const fill = colorFor(v, breaks);
+      l._currentFill = fill;
+      l.setStyle({ fillColor: fill });
+      const valTxt = Number.isFinite(v)? v.toFixed(3) : 'No data';
+      l.bindTooltip(`<div><strong>${name}</strong><br/><span class="note">${code}</span><br/>${metricLabel()}: <strong>${valTxt}</strong></div>`, { sticky:true, opacity:0.95, className:'tooltip' });
+    });
+
+    updateLegend(breaks);
+  }
+
+  function updateLegend(breaks){
+    const el=document.getElementById('legend');
+    let html = `<div style="margin-bottom:6px;font-weight:700;text-transform:uppercase;">${metricLabel()} (fixed scale, 2015–2023)</div>`;
+    if(!breaks.length){ html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span> No data</div>`; el.innerHTML=html; return; }
+    for(let i=0;i<PALETTE.length;i++){
+      const a=breaks[i], b=breaks[i+1]; if(a==null || b==null) continue;
+      html += `<div class="row"><span class="swatch" style="background:${PALETTE[i]}"></span> ${fmt(a)} – ${fmt(b)}</div>`;
     }
+    html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span> No data</div>`;
+    el.innerHTML = html;
+  }
 
-    function tooltipHtml(name, code, v) { const val = Number.isFinite(v) ? v.toFixed(3) : 'No data'; return `<div><strong>${name}</strong><br/><span class="note">${code}</span><br/>Value: <strong>${val}</strong></div>`; }
+  function fmt(x){ return Number.isFinite(x)? x.toFixed(3) : '—'; }
 
-    function updateLegend(breaks) {
-      const el = document.getElementById('legend');
-      if (!breaks.length) { el.hidden = true; return; }
-      el.hidden = false; let html = '<div style="margin-bottom:6px;font-weight:600;">Legend</div>';
-      for (let i=0; i<PALETTE.length; i++) { const a = breaks[i], b = breaks[i+1]; if (a==null || b==null) continue; html += `<div class="row"><span class="swatch" style="background:${PALETTE[i]}"></span> ${fmt(a)} – ${fmt(b)}</div>`; }
-      html += '<div class="row"><span class="swatch" style="background:repeating-linear-gradient(45deg,#2a354f,#2a354f 6px,#1b243a 6px,#1b243a 12px)"></span> No data</div>';
-      el.innerHTML = html;
-    }
+  function fitUK() {
+    if (!layer) return;
+    const bounds = layer.getBounds();
+    const tight = bounds.pad(-0.05);   // slightly tighter framing
+    map.fitBounds(tight, { padding: [20, 20] });
+  }
 
-    function fmt(x) { return Number.isFinite(x) ? x.toFixed(3) : '—'; }
+  function togglePlay(){
+    const btn = document.getElementById('playBtn');
+    if(timer){ clearInterval(timer); timer = null; btn.textContent = '▶ Play year'; return; }
+    btn.textContent = '⏸ Pause';
+    const [minY, maxY] = yearBounds;
+    timer = setInterval(()=>{
+      year = (year >= maxY) ? minY : (year + 1);
+      document.getElementById('yearRange').value = year;
+      document.getElementById('yearInput').value = year;
+      render();
+    }, 1200);
+  }
 
-    function fitUK() { if (!layer) return; map.fitBounds(layer.getBounds(), { padding: [20,20] }); }
-
-    function showTooltip(layer) { if (layer?.openTooltip) layer.openTooltip(); }
-    function hideTooltip() { /* Leaflet handles tooltip hide on mouseout */ }
-
-    // Kick off
-    window.addEventListener('DOMContentLoaded', () => { init(); });
-  </script>
-</body>
-</html>
+  window.addEventListener('DOMContentLoaded', init);
+</script>
