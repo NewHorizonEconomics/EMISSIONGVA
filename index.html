@@ -173,48 +173,55 @@ select {
     </main>
   </div>
 
-  <script defer>
-  // Config
-  const GEOJSON_URL = '/data/lad_2023.geojson';
-  const CSV_URL = '/data/data.csv';
+<script defer>
+  // ===== Config =====
+  // If you've switched to a UK-wide LAD file incl. NI, update the path here:
+  const GEOJSON_URL = '/data/lad_2023.geojson';   // must include NI features too
+  const CSV_URL     = '/data/data.csv';           // your emissions CSV (see columns below)
+
+  // ONS 2023 LAD properties (England/Wales/Scotland + NI use LAD23CD/LAD23NM in the 2023 schema)
   const CODE_PROP = 'LAD23CD';
   const NAME_PROP = 'LAD23NM';
+
+  // CSV field names we expect:
+  //   CODE, YEAR, and four metric columns:
+  //   TOTAL (col C), CO2 (D), CH4 (E), N2O (F)  — same unit: kt CO2e per £1m GVA
   const CSV_CODE = 'CODE';
   const CSV_YEAR = 'YEAR';
-  const CSV_VALUE = 'VALUE';
+  const CSV_COLS = { total:'TOTAL', co2:'CO2', ch4:'CH4', n2o:'N2O' };
 
-  const PALETTE = ['#eef3ff','#d9e4ff','#bcd0ff','#98b8ff','#719bff','#4f80ff','#2a63ff','#1249ef'];
+  // Brand gold palette (light -> dark)
+  const PALETTE = ['#fff7e6','#ffe8b3','#ffd580','#ffc247','#ffae00','#d89000','#b37400','#8c5a00'];
   const NO_DATA_FILL = '#3a4258';
 
-  let map, layer, geo, dataRows = [], year = 2023, metricMode = 'ktoe', timer = null, yearBounds = [2015,2025];
+  // State
+  let map, layer, geo, dataRows = [];
+  let year = 2023;
+  let metricMode = 'total';  // 'total' | 'co2' | 'ch4' | 'n2o'
+  let timer = null;
+  let yearBounds = [2015, 2025];
 
-  // NEW: fixed breaks across all years
-  let globalBreaks = [];
-  function computeGlobalBreaks() {
-    if (!dataRows.length) { globalBreaks = []; return; }
-    const all = [];
-    for (const r of dataRows) {
-      const v = toMetric(+r[CSV_VALUE]);
-      if (Number.isFinite(v)) all.push(v);
-    }
-    globalBreaks = getQuantileBreaks(all, PALETTE.length);
-  }
+  // Fixed breaks per metric across all years (object keyed by metric)
+  const globalBreaksByMetric = { total:[], co2:[], ch4:[], n2o:[] };
 
+  // ===== Init =====
   function init(){
     map = L.map('map', {
       preferCanvas: true,
       zoomControl: true,
       zoomSnap: 0.25,
       zoomDelta: 0.5
-    }).setView([54.5, -3], 6);
+    }).setView([54.9, -3.5], 6);   // UK-centred (incl. NI)
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution:'&copy; OpenStreetMap, &copy; CARTO' }).addTo(map);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      { attribution:'&copy; OpenStreetMap, &copy; CARTO' }).addTo(map);
 
     document.getElementById('fitBtn').addEventListener('click', fitUK);
     document.getElementById('playBtn').addEventListener('click', togglePlay);
+
     document.getElementById('metricMode').addEventListener('change', e=>{
       metricMode = e.target.value;
-      computeGlobalBreaks();     // recompute fixed scale when unit changes
+      computeGlobalBreaksForAll();   // recompute fixed scales per metric (units are the same, but bins differ by metric)
       render();
     });
 
@@ -227,6 +234,7 @@ select {
     loadCsv();
   }
 
+  // ===== Data loading =====
   async function loadGeo(){
     const res = await fetch(GEOJSON_URL, { cache:'no-store' });
     if(!res.ok) throw new Error('GeoJSON fetch failed: '+res.status);
@@ -238,24 +246,29 @@ select {
   }
 
   function loadCsv(){
-    Papa.parse(CSV_URL, { download:true, header:true, dynamicTyping:true, skipEmptyLines:true,
+    Papa.parse(CSV_URL, {
+      download:true, header:true, dynamicTyping:true, skipEmptyLines:true,
       complete: (results)=>{
         dataRows = (results.data||[]).filter(r=> r[CSV_CODE]!=null && r[CSV_YEAR]!=null);
         if(dataRows.length){
-          const yrs = [...new Set(dataRows.map(r=>+r[CSV_YEAR]))].filter(x=>Number.isFinite(x)).sort((a,b)=>a-b);
+          const yrs = [...new Set(dataRows.map(r=>+r[CSV_YEAR]))].filter(Number.isFinite).sort((a,b)=>a-b);
           if(yrs.length){
             yearBounds = [Math.min(...yrs), Math.max(...yrs)];
-            const [minY,maxY] = yearBounds; const yrRange = document.getElementById('yearRange'); const yrInput = document.getElementById('yearInput');
+            const [minY,maxY] = yearBounds;
+            const yrRange = document.getElementById('yearRange');
+            const yrInput = document.getElementById('yearInput');
             yrRange.min=minY; yrRange.max=maxY; yrInput.min=minY; yrInput.max=maxY;
             if(+yrRange.value<minY || +yrRange.value>maxY){ yrRange.value=minY; yrInput.value=minY; year=minY; }
           }
         }
-        computeGlobalBreaks();    // NEW: set fixed scale once data are in
+        computeGlobalBreaksForAll();   // build fixed bins for each metric across all years
         render();
-      }, error: (err)=>{ console.error(err); alert('CSV load failed'); }
+      },
+      error: (err)=>{ console.error(err); alert('CSV load failed'); }
     });
   }
 
+  // ===== Helpers =====
   function baseStyle(){ return { color:'#1e2a44', weight:0.6, fillColor:NO_DATA_FILL, fillOpacity:0.9 } }
 
   function bindFeature(f, l){
@@ -266,62 +279,108 @@ select {
   function onHover(e){ const l=e.target; l.setStyle({ weight:2, color:'#ffffff', fillColor:l._currentFill, fillOpacity:1 }); if(l.openTooltip) l.openTooltip(); }
   function onOut(e){ const l=e.target; l.setStyle({ weight:0.6, color:'#1e2a44', fillColor:l._currentFill, fillOpacity:0.9 }); }
 
-  function getYearValues(y){ const m=new Map(); for(const r of dataRows){ if(+r[CSV_YEAR]===+y){ m.set(String(r[CSV_CODE]).trim(), +r[CSV_VALUE]); } } return m; }
+  function getYearValues(y, metricKey){
+    const col = CSV_COLS[metricKey];
+    const m = new Map();
+    for(const r of dataRows){
+      if(+r[CSV_YEAR] === +y){
+        m.set(String(r[CSV_CODE]).trim(), +r[col]);
+      }
+    }
+    return m;
+  }
 
+  // Quantile breaks utility
   function getQuantileBreaks(values, k=PALETTE.length){
-    const v=values.filter(x=>Number.isFinite(x)).slice().sort((a,b)=>a-b);
+    const v = values.filter(Number.isFinite).slice().sort((a,b)=>a-b);
     if(!v.length) return [];
-    const qs=[];
-    for(let i=0;i<=k;i++){ const p=i/k; const idx=Math.floor(p*(v.length-1)); qs.push(v[idx]); }
+    const qs = [];
+    for(let i=0;i<=k;i++){
+      const p = i/k;
+      const idx = Math.floor(p*(v.length-1));
+      qs.push(v[idx]);
+    }
     return qs;
   }
 
-  function toMetric(val){ if(!Number.isFinite(val)) return val; return metricMode==='gwh' ? val*11.63 : val; }
-  function metricLabel(){ return metricMode==='gwh' ? 'GWh per £1m GVA' : 'ktoe per £1m GVA'; }
+  // Fixed breaks: compute across all years for EACH metric (separate scales per metric)
+  function computeGlobalBreaksForAll(){
+    ['total','co2','ch4','n2o'].forEach(metricKey=>{
+      const col = CSV_COLS[metricKey];
+      const all = [];
+      for(const r of dataRows){
+        const v = +r[col];
+        if(Number.isFinite(v)) all.push(v);
+      }
+      globalBreaksByMetric[metricKey] = getQuantileBreaks(all, PALETTE.length);
+    });
+  }
+
+  function metricLabel(){
+    switch(metricMode){
+      case 'co2': return 'CO₂ (kt CO₂e) per £1m GVA';
+      case 'ch4': return 'CH₄ (kt CO₂e) per £1m GVA';
+      case 'n2o': return 'N₂O (kt CO₂e) per £1m GVA';
+      default:    return 'Total GHG (kt CO₂e) per £1m GVA';
+    }
+  }
 
   function colorFor(val, breaks){
     if(!Number.isFinite(val) || !breaks.length) return NO_DATA_FILL;
-    for(let i=0;i<PALETTE.length;i++){ if(val<=breaks[i+1]) return PALETTE[i]; }
+    for(let i=0;i<PALETTE.length;i++){
+      if(val <= breaks[i+1]) return PALETTE[i];
+    }
     return PALETTE[PALETTE.length-1];
   }
 
+  function fmt(x){ return Number.isFinite(x)? x.toFixed(3) : '—'; }
+
+  // ===== Render =====
   function render(){
     if(!map || !layer || !geo) return;
     document.getElementById('kpi-year').textContent = year;
 
-    // Ensure fixed breaks exist (in case render fires before CSV finished)
-    if (!globalBreaks.length) computeGlobalBreaks();
-    const breaks = globalBreaks;
-
-    const yrValsRaw = getYearValues(year);
+    const breaks = globalBreaksByMetric[metricMode] || [];
+    const yrVals = getYearValues(year, metricMode);
 
     layer.eachLayer(l=>{
-      const f=l.feature; const code=String(f.properties[CODE_PROP]).trim(); const name=String(f.properties[NAME_PROP]);
-      const v = toMetric(yrValsRaw.get(code));
+      const f = l.feature;
+      const code = String(f.properties[CODE_PROP]).trim();
+      const name = String(f.properties[NAME_PROP]);
+      const v = yrVals.get(code);
       const fill = colorFor(v, breaks);
       l._currentFill = fill;
       l.setStyle({ fillColor: fill });
-      const valTxt = Number.isFinite(v)? v.toFixed(3) : 'No data';
-      l.bindTooltip(`<div><strong>${name}</strong><br/><span class="note">${code}</span><br/>${metricLabel()}: <strong>${valTxt}</strong></div>`, { sticky:true, opacity:0.95, className:'tooltip' });
+
+      const valTxt = Number.isFinite(v) ? v.toFixed(3) : 'No data';
+      l.bindTooltip(
+        `<div><strong>${name}</strong><br/><span class="note">${code}</span><br/>${metricLabel()}: <strong>${valTxt}</strong></div>`,
+        { sticky:true, opacity:0.95, className:'tooltip' }
+      );
     });
 
     updateLegend(breaks);
   }
 
   function updateLegend(breaks){
-    const el=document.getElementById('legend');
-    let html = `<div style="margin-bottom:6px;font-weight:700;text-transform:uppercase;">${metricLabel()} (fixed scale, 2015–2023)</div>`;
-    if(!breaks.length){ html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span> No data</div>`; el.innerHTML=html; return; }
+    const el = document.getElementById('legend');
+    let html = `<div style="margin-bottom:6px;font-weight:700;text-transform:uppercase;">
+      ${metricLabel()} (fixed scale, 2015–2023)
+    </div>`;
+    if(!breaks.length){
+      html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span> No data</div>`;
+      el.innerHTML = html; return;
+    }
     for(let i=0;i<PALETTE.length;i++){
-      const a=breaks[i], b=breaks[i+1]; if(a==null || b==null) continue;
+      const a = breaks[i], b = breaks[i+1];
+      if(a==null || b==null) continue;
       html += `<div class="row"><span class="swatch" style="background:${PALETTE[i]}"></span> ${fmt(a)} – ${fmt(b)}</div>`;
     }
     html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span> No data</div>`;
     el.innerHTML = html;
   }
 
-  function fmt(x){ return Number.isFinite(x)? x.toFixed(3) : '—'; }
-
+  // ===== Map utils =====
   function fitUK() {
     if (!layer) return;
     const bounds = layer.getBounds();
