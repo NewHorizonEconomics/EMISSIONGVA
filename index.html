@@ -145,8 +145,8 @@ select {
 
   <div class="group">
     <label>Year</label>
-    <input id="yearRange" type="range" min="2015" max="2025" step="1" value="2023"/>
-    <input id="yearInput" type="number" min="2015" max="2025" step="1" value="2023" style="margin-top:6px;"/>
+    <input id="yearRange" type="range" min="2015" max="2023" step="1" value="2023"/>
+    <input id="yearInput" type="number" min="2015" max="2023" step="1" value="2023" style="margin-top:6px;"/>
   </div>
 
   <div class="group">
@@ -175,20 +175,11 @@ select {
 
 <script defer>
   // ===== Config =====
-  // If you've switched to a UK-wide LAD file incl. NI, update the path here:
-  const GEOJSON_URL = '/data/lad_2023.geojson';   // must include NI features too
-  const CSV_URL     = '/data/data.csv';           // your emissions CSV (see columns below)
+  const GEOJSON_URL = '/data/lad_2023.geojson';   // UK-wide LAD file (incl. NI)
+  const CSV_URL     = '/data/data.csv';           // emissions CSV
 
-  // ONS 2023 LAD properties (England/Wales/Scotland + NI use LAD23CD/LAD23NM in the 2023 schema)
   const CODE_PROP = 'LAD23CD';
   const NAME_PROP = 'LAD23NM';
-
-  // CSV field names we expect:
-  //   CODE, YEAR, and four metric columns:
-  //   TOTAL (col C), CO2 (D), CH4 (E), N2O (F)  — same unit: kt CO2e per £1m GVA
-  const CSV_CODE = 'CODE';
-  const CSV_YEAR = 'YEAR';
-  const CSV_COLS = { total:'TOTAL', co2:'CO2', ch4:'CH4', n2o:'N2O' };
 
   // Brand gold palette (light -> dark)
   const PALETTE = ['#fff7e6','#ffe8b3','#ffd580','#ffc247','#ffae00','#d89000','#b37400','#8c5a00'];
@@ -199,19 +190,18 @@ select {
   let year = 2023;
   let metricMode = 'total';  // 'total' | 'co2' | 'ch4' | 'n2o'
   let timer = null;
-  let yearBounds = [2015, 2025];
+  let yearBounds = [2015, 2023];
 
-  // Fixed breaks per metric across all years (object keyed by metric)
+  // Detected CSV columns (filled at runtime)
+  let CSV_KEYS = { code:null, year:null, total:null, co2:null, ch4:null, n2o:null };
+
+  // Fixed breaks per metric across all years
   const globalBreaksByMetric = { total:[], co2:[], ch4:[], n2o:[] };
 
   // ===== Init =====
   function init(){
-    map = L.map('map', {
-      preferCanvas: true,
-      zoomControl: true,
-      zoomSnap: 0.25,
-      zoomDelta: 0.5
-    }).setView([54.9, -3.5], 6);   // UK-centred (incl. NI)
+    map = L.map('map', { preferCanvas:true, zoomControl:true, zoomSnap:0.25, zoomDelta:0.5 })
+      .setView([54.9, -3.5], 6);
 
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
       { attribution:'&copy; OpenStreetMap, &copy; CARTO' }).addTo(map);
@@ -221,7 +211,7 @@ select {
 
     document.getElementById('metricMode').addEventListener('change', e=>{
       metricMode = e.target.value;
-      computeGlobalBreaksForAll();   // recompute fixed scales per metric (units are the same, but bins differ by metric)
+      computeGlobalBreaksForAll();
       render();
     });
 
@@ -249,23 +239,79 @@ select {
     Papa.parse(CSV_URL, {
       download:true, header:true, dynamicTyping:true, skipEmptyLines:true,
       complete: (results)=>{
-        dataRows = (results.data||[]).filter(r=> r[CSV_CODE]!=null && r[CSV_YEAR]!=null);
+        const rows = (results.data||[]);
+        if (!rows.length) { console.warn('CSV parsed but no rows'); return; }
+
+        // Auto-detect headers
+        CSV_KEYS = detectCsvColumns(rows[0]);
+        console.log('Detected CSV columns:', CSV_KEYS);
+
+        if (!CSV_KEYS.code || !CSV_KEYS.year || !CSV_KEYS.total || !CSV_KEYS.co2 || !CSV_KEYS.ch4 || !CSV_KEYS.n2o) {
+          console.error('Missing required CSV columns after detection. Check headers.');
+          alert('CSV columns not detected. Check headers for CODE, YEAR, TOTAL, CO2, CH4, N2O.');
+          return;
+        }
+
+        // Filter minimally valid rows (code + year present)
+        dataRows = rows.filter(r=> r[CSV_KEYS.code]!=null && r[CSV_KEYS.year]!=null);
+
+        // Year bounds
         if(dataRows.length){
-          const yrs = [...new Set(dataRows.map(r=>+r[CSV_YEAR]))].filter(Number.isFinite).sort((a,b)=>a-b);
+          const yrs = [...new Set(dataRows.map(r=> +r[CSV_KEYS.year]))].filter(Number.isFinite).sort((a,b)=>a-b);
           if(yrs.length){
             yearBounds = [Math.min(...yrs), Math.max(...yrs)];
             const [minY,maxY] = yearBounds;
             const yrRange = document.getElementById('yearRange');
             const yrInput = document.getElementById('yearInput');
             yrRange.min=minY; yrRange.max=maxY; yrInput.min=minY; yrInput.max=maxY;
-            if(+yrRange.value<minY || +yrRange.value>maxY){ yrRange.value=minY; yrInput.value=minY; year=minY; }
+            if(+yrRange.value<minY || +yrRange.value>maxY){ yrRange.value=maxY; yrInput.value=maxY; year=maxY; }
           }
         }
-        computeGlobalBreaksForAll();   // build fixed bins for each metric across all years
+
+        console.log(`CSV loaded: ${dataRows.length} rows, years ${yearBounds[0]}–${yearBounds[1]}`);
+
+        computeGlobalBreaksForAll();   // build fixed bins per metric (across all years)
         render();
       },
       error: (err)=>{ console.error(err); alert('CSV load failed'); }
     });
+  }
+
+  // ===== Header detection =====
+  function normaliseKey(k){
+    return String(k||'')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g,'')      // remove spaces, punctuation, greek letters if fused as utf?
+      .replace(/co₂|co2e/g,'co2');    // normalise co₂/co2e to co2
+  }
+
+  function findKey(candidates, row){
+    const keys = Object.keys(row);
+    const normMap = new Map(keys.map(k=> [normaliseKey(k), k]));
+    for (const cand of candidates){
+      const norm = normaliseKey(cand);
+      if (normMap.has(norm)) return normMap.get(norm);
+    }
+    // try partial contains (e.g., 'totalghg', 'totalktco2e')
+    for (const [nk, orig] of normMap.entries()){
+      for (const c of candidates){
+        const nc = normaliseKey(c);
+        if (nk.includes(nc)) return orig;
+      }
+    }
+    return null;
+  }
+
+  function detectCsvColumns(sampleRow){
+    // CODE can appear as CODE, LAD23CD, LADCD, GEOGCD, etc.
+    const code = findKey(['code','lad23cd','ladcd','geogcode','geographycode','areacode','la_code'], sampleRow);
+    const year = findKey(['year','yyyy','yr'], sampleRow);
+    // metrics
+    const total = findKey(['total','totalghg','ghg','co2e','ktco2e'], sampleRow);
+    const co2   = findKey(['co2','co2only'], sampleRow);
+    const ch4   = findKey(['ch4','methane'], sampleRow);
+    const n2o   = findKey(['n2o','nitrousoxide'], sampleRow);
+    return { code, year, total, co2, ch4, n2o };
   }
 
   // ===== Helpers =====
@@ -280,17 +326,20 @@ select {
   function onOut(e){ const l=e.target; l.setStyle({ weight:0.6, color:'#1e2a44', fillColor:l._currentFill, fillOpacity:0.9 }); }
 
   function getYearValues(y, metricKey){
-    const col = CSV_COLS[metricKey];
+    const colKey = CSV_KEYS[metricKey];
+    const codeKey = CSV_KEYS.code;
+    const yearKey = CSV_KEYS.year;
     const m = new Map();
     for(const r of dataRows){
-      if(+r[CSV_YEAR] === +y){
-        m.set(String(r[CSV_CODE]).trim(), +r[col]);
+      if(+r[yearKey] === +y){
+        const code = String(r[codeKey]).trim();
+        const v = +r[colKey];
+        m.set(code, Number.isFinite(v) ? v : NaN);
       }
     }
     return m;
   }
 
-  // Quantile breaks utility
   function getQuantileBreaks(values, k=PALETTE.length){
     const v = values.filter(Number.isFinite).slice().sort((a,b)=>a-b);
     if(!v.length) return [];
@@ -303,17 +352,18 @@ select {
     return qs;
   }
 
-  // Fixed breaks: compute across all years for EACH metric (separate scales per metric)
   function computeGlobalBreaksForAll(){
     ['total','co2','ch4','n2o'].forEach(metricKey=>{
-      const col = CSV_COLS[metricKey];
+      const colKey = CSV_KEYS[metricKey];
+      if (!colKey) { globalBreaksByMetric[metricKey]=[]; return; }
       const all = [];
       for(const r of dataRows){
-        const v = +r[col];
+        const v = +r[colKey];
         if(Number.isFinite(v)) all.push(v);
       }
       globalBreaksByMetric[metricKey] = getQuantileBreaks(all, PALETTE.length);
     });
+    console.log('Breaks:', globalBreaksByMetric);
   }
 
   function metricLabel(){
@@ -343,6 +393,7 @@ select {
     const breaks = globalBreaksByMetric[metricMode] || [];
     const yrVals = getYearValues(year, metricMode);
 
+    let matched = 0;
     layer.eachLayer(l=>{
       const f = l.feature;
       const code = String(f.properties[CODE_PROP]).trim();
@@ -357,15 +408,17 @@ select {
         `<div><strong>${name}</strong><br/><span class="note">${code}</span><br/>${metricLabel()}: <strong>${valTxt}</strong></div>`,
         { sticky:true, opacity:0.95, className:'tooltip' }
       );
+      if (Number.isFinite(v)) matched++;
     });
 
+    console.log(`Render ${metricMode} ${year}: matched ${matched} of ${layer.getLayers().length} features`);
     updateLegend(breaks);
   }
 
   function updateLegend(breaks){
     const el = document.getElementById('legend');
     let html = `<div style="margin-bottom:6px;font-weight:700;text-transform:uppercase;">
-      ${metricLabel()} (fixed scale, 2015–2023)
+      ${metricLabel()} (fixed scale, ${yearBounds[0]}–${yearBounds[1]})
     </div>`;
     if(!breaks.length){
       html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span> No data</div>`;
@@ -384,7 +437,7 @@ select {
   function fitUK() {
     if (!layer) return;
     const bounds = layer.getBounds();
-    const tight = bounds.pad(-0.05);   // slightly tighter framing
+    const tight = bounds.pad(-0.05);
     map.fitBounds(tight, { padding: [20, 20] });
   }
 
@@ -403,3 +456,4 @@ select {
 
   window.addEventListener('DOMContentLoaded', init);
 </script>
+
