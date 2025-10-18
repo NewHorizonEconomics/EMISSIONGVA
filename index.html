@@ -260,7 +260,6 @@ select {
   }
 
   async function loadGeoITL1(){
-  async function loadGeoITL1(){
   const res = await fetch(GEO_ITL1_URL, { cache:'no-store' });
   if(!res.ok) throw new Error('ITL1 GeoJSON fetch failed: '+res.status);
   geoITL1 = await res.json();
