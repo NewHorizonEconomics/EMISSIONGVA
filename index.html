@@ -191,6 +191,22 @@ select {
   function normITL1(code){
   return String(code || '').trim().toUpperCase();
 }
+
+  // Build a single array of ratio values across *all years* for a given geography+metric
+function getAllRatiosAcrossYears(geo, metric){
+  if (!Array.isArray(dataRows) || !dataRows.length || !CSV_KEYS.year) return [];
+  const years = [...new Set(dataRows.map(r => +r[CSV_KEYS.year]))].filter(Number.isFinite);
+  const out = [];
+  for (const y of years){
+    const mapVals = getRatiosForYear(geo, metric, y); // uses your existing function
+    // mapVals is Map(code -> ratio), push finite values
+    for (const v of mapVals.values()){
+      if (Number.isFinite(v)) out.push(v);
+    }
+  }
+  return out;
+}
+
   
   // ========= UI / State =========
   const GOLD_PALETTE = ['#fff7e6','#ffe8b3','#ffd580','#ffc247','#ffae00','#d89000','#b37400','#8c5a00'];
@@ -399,15 +415,16 @@ select {
   }
 
   // Compute fixed breaks per (geo, metric) across ALL years
-  function computeAllBreaks(){
-    ['ITL3','ITL1'].forEach(g=>{
-      ['total','co2','ch4','n2o'].forEach(m=>{
-        const vals = getAllRatiosAcrossYears(g, m);
-        BREAKS[g][m] = getQuantileBreaks(vals, GOLD_PALETTE.length);
-      });
+ function computeAllBreaks(){
+  ['ITL3','ITL1'].forEach(g=>{
+    ['total','co2','ch4','n2o'].forEach(m=>{
+      const vals = getAllRatiosAcrossYears(g, m);
+      BREAKS[g][m] = getQuantileBreaks(vals, GOLD_PALETTE.length);
     });
-    console.log('Fixed breaks:', BREAKS);
-  }
+  });
+  console.log('Fixed breaks:', BREAKS);
+}
+
 
   function getRatiosForYear(geo, metric, y){
   const mKey   = CSV_KEYS[metric];   // 'total'|'co2'|'ch4'|'n2o' → CSV key
