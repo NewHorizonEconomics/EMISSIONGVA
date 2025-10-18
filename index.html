@@ -188,6 +188,10 @@ select {
   const GEO_ITL1_URL = '/data/itl1_boundaries.geojson';   // ITL1 polygons (UK-wide)
   const CSV_URL      = '/data/data.csv';                  // ITL3-scale data with totals + GVA
 
+  function normITL1(code){
+  return String(code || '').trim().toUpperCase();
+}
+  
   // ========= UI / State =========
   const GOLD_PALETTE = ['#fff7e6','#ffe8b3','#ffd580','#ffc247','#ffae00','#d89000','#b37400','#8c5a00'];
   const NO_DATA_FILL = '#3a4258';
@@ -405,18 +409,42 @@ select {
     console.log('Fixed breaks:', BREAKS);
   }
 
-  function getAllRatiosAcrossYears(geo, metric){
-    // Gather ratios across all years for that geography+metric
-    const out = [];
-    const yearSet = new Set(dataRows.map(r=> +r[CSV_KEYS.year]));
-    for (const y of yearSet){
-      const mapVals = getRatiosForYear(geo, metric, y);
-      for (const v of mapVals.values()){
-        if (Number.isFinite(v)) out.push(v);
-      }
+  function getRatiosForYear(geo, metric, y){
+  const mKey   = CSV_KEYS[metric];   // 'total'|'co2'|'ch4'|'n2o' → CSV key
+  const codeKey= CSV_KEYS.code;      // ITL3 code
+  const yearKey= CSV_KEYS.year;
+  const gvaKey = CSV_KEYS.gva;
+  const itl1Key= CSV_KEYS.itl1;      // ITL1 code in CSV
+
+  if (geo === 'ITL3'){
+    const m = new Map();  // ITL3 code -> ratio
+    for (const r of dataRows){
+      if (+r[yearKey] !== +y) continue;
+      const code = String(r[codeKey]).trim();
+      const num  = +r[mKey];
+      const den  = +r[gvaKey];
+      m.set(code, (Number.isFinite(num) && Number.isFinite(den) && den !== 0) ? num/den : NaN);
     }
-    return out;
+    return m;
+  } else {
+    // Aggregate to ITL1: sum numerators/denominators across ITL3 children
+    const agg = new Map(); // ITL1 -> {num, den}
+    for (const r of dataRows){
+      if (+r[yearKey] !== +y) continue;
+      const itl1 = normITL1(r[itl1Key]);  // <<< normalise here
+      const num  = +r[mKey];
+      const den  = +r[gvaKey];
+      if (!agg.has(itl1)) agg.set(itl1, {num:0, den:0});
+      if (Number.isFinite(num)) agg.get(itl1).num += num;
+      if (Number.isFinite(den)) agg.get(itl1).den += den;
+    }
+    const m = new Map();
+    for (const [k, nd] of agg.entries()){
+      m.set(k, (nd.den !== 0) ? nd.num/nd.den : NaN);
+    }
+    return m;
   }
+}
 
   // ========= Ratio builders =========
   // Returns Map(code -> ratio) for chosen geography, metric, year
@@ -504,37 +532,52 @@ select {
   }
 
   // ========= Render =========
-  function render(){
-    if(!map || !layer) return;
-    document.getElementById('kpi-year').textContent = year;
+ function render(){
+  if(!map || !layer) return;
+  document.getElementById('kpi-year').textContent = year;
 
-    const breaks = BREAKS[geoMode][metricMode] || [];
-    const vals   = getRatiosForYear(geoMode, metricMode, year);
+  const breaks = BREAKS[geoMode][metricMode] || [];
+  const vals   = getRatiosForYear(geoMode, metricMode, year);
 
-    const keys   = (geoMode==='ITL3') ? ITL3_KEYS : ITL1_KEYS;
-    const codeP  = keys.codeProp, nameP = keys.nameProp;
+  const keys   = (geoMode==='ITL3') ? ITL3_KEYS : ITL1_KEYS;
+  const codeP  = keys.codeProp, nameP = keys.nameProp;
 
-    let matched = 0;
-    layer.eachLayer(l=>{
-      const f = l.feature;
-      const code = String(f.properties[codeP]).trim();
-      const name = String(f.properties[nameP]);
-      const v = vals.get(code);
-      const fill = colorFor(v, breaks);
-      l._currentFill = fill;
-      l.setStyle({ fillColor: fill });
+  let matched = 0, total = 0, firstFewMisses = [];
 
-      const valTxt = Number.isFinite(v) ? v.toFixed(3) : 'No data';
-      l.bindTooltip(
-        `<div><strong>${name}</strong><br/><span class="note">${code}</span><br/>${metricLabel()}: <strong>${valTxt}</strong></div>`,
-        { sticky:true, opacity:0.95, className:'tooltip' }
-      );
-      if (Number.isFinite(v)) matched++;
-    });
+  layer.eachLayer(l=>{
+    total++;
+    const f    = l.feature;
+    const rawC = f.properties[codeP];
+    const code = (geoMode==='ITL1') ? normITL1(rawC) : String(rawC).trim();  // <<< normalise ITL1 feature codes
+    const name = String(f.properties[nameP]);
 
-    console.log(`Render ${geoMode}/${metricMode} ${year}: matched ${matched} of ${layer.getLayers().length}`);
-    updateLegend(breaks);
+    const v    = vals.get(code);
+    const fill = colorFor(v, breaks);
+    l._currentFill = fill;
+    l.setStyle({ fillColor: fill });
+
+    const valTxt = Number.isFinite(v) ? v.toFixed(3) : 'No data';
+    l.bindTooltip(
+      `<div><strong>${name}</strong><br/><span class="note">${code}</span><br/>${metricLabel()}: <strong>${valTxt}</strong></div>`,
+      { sticky:true, opacity:0.95, className:'tooltip' }
+    );
+
+    if (Number.isFinite(v)) matched++;
+    else if (firstFewMisses.length < 5) firstFewMisses.push({code, name});
+  });
+
+  console.log(`Render ${geoMode}/${metricMode} ${year}: matched ${matched} of ${total}`);
+  if (matched === 0 && total > 0){
+    console.warn('Example unmatched ITL1 codes:', firstFewMisses);
+    // Also print a sample of CSV ITL1 codes so you can eyeball:
+    const sampleCsv = [...new Set(
+      dataRows.filter(r=> +r[CSV_KEYS.year]===+year).map(r=> normITL1(r[CSV_KEYS.itl1]))
+    )].slice(0,10);
+    console.warn('Sample CSV ITL1 codes for this year:', sampleCsv);
   }
+
+  updateLegend(breaks);
+}
 
   function updateLegend(breaks){
     const el = document.getElementById('legend');
