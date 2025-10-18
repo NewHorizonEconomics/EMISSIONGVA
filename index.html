@@ -183,457 +183,252 @@ select {
   </div>
 
 <script defer>
-  // ========= Paths (adjust if your filenames differ) =========
-  const GEO_ITL3_URL = '/data/lad_2023.geojson';              // ITL3 polygons (UK-wide)
-  const GEO_ITL1_URL = '/data/itl1_boundaries.geojson';   // ITL1 polygons (UK-wide)
-  const CSV_URL      = '/data/data.csv';                  // ITL3-scale data with totals + GVA
+// ---------- EDIT ME (5 constants) ----------
+const CSV_URL        = '/data/data.csv';                 // Code,Year,Total,CO2,CH4,N2O,GVA,ITL1
+const ITL1_GEO_URL   = '/data/itl1_boundaries.geojson';  // ITL1 polygons
+const ITL3_GEO_URL   = '/data/itl3.geojson';             // ITL3 polygons (set ENABLE_ITL3=false if you don’t have this yet)
+const ITL1_CODE_PROP = 'ITL121CD';                       // e.g. TLC…TLN in your ITL1 geojson
+const ITL1_NAME_PROP = 'ITL121NM';                       // e.g. “North East”
+const ITL3_CODE_PROP = 'ITL321CD';                       // adjust to your ITL3 geojson (e.g. ITL321CD / ITL321NM)
+const ITL3_NAME_PROP = 'ITL321NM';
+const ENABLE_ITL3    = true;                             // set to false to hide ITL3 until you add the file
+// -------------------------------------------
 
-  function normITL1(code){
-  return String(code || '').trim().toUpperCase();
+const PALETTE = ['#fff7e6','#ffe8b3','#ffd580','#ffc247','#ffae00','#d89000','#b37400','#8c5a00'];
+const NO_DATA_FILL = '#3a4258';
+
+let map, layer, geoITL1=null, geoITL3=null;
+let rows=[], BREAKS={ ITL1:{}, ITL3:{} };
+let year=2023, yearBounds=[2015,2023], metric='total', geo='ITL1'; // default to ITL1 since that’s your blocker
+const K = PALETTE.length;
+
+const CSV = { code:'Code', year:'Year', total:'Total', co2:'CO2', ch4:'CH4', n2o:'N2O', gva:'GVA', itl1:'ITL1' };
+const MET_KEYS = ['total','co2','ch4','n2o'];
+
+function norm(x){ return String(x||'').trim().toUpperCase(); }
+function metricLabel(m){
+  return m==='co2' ? 'CO₂ (kt CO₂e) per £1m GVA'
+       : m==='ch4' ? 'CH₄ (kt CO₂e) per £1m GVA'
+       : m==='n2o' ? 'N₂O (kt CO₂e) per £1m GVA'
+                   : 'Total GHG (kt CO₂e) per £1m GVA';
 }
 
-  // Build a single array of ratio values across *all years* for a given geography+metric
-function getAllRatiosAcrossYears(geo, metric){
-  if (!Array.isArray(dataRows) || !dataRows.length || !CSV_KEYS.year) return [];
-  const years = [...new Set(dataRows.map(r => +r[CSV_KEYS.year]))].filter(Number.isFinite);
-  const out = [];
-  for (const y of years){
-    const mapVals = getRatiosForYear(geo, metric, y); // uses your existing function
-    // mapVals is Map(code -> ratio), push finite values
-    for (const v of mapVals.values()){
-      if (Number.isFinite(v)) out.push(v);
+// --- setup (uses your existing DOM controls) ---
+window.addEventListener('DOMContentLoaded', async ()=>{
+  map = L.map('map',{preferCanvas:true,zoomSnap:0.25,zoomDelta:0.5}).setView([54.9,-3.5],6);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+              {attribution:'&copy; OpenStreetMap, &copy; CARTO'}).addTo(map);
+
+  // Hook existing controls (year slider/number, metric select, play/reset)
+  const yrR=document.getElementById('yearRange'), yrI=document.getElementById('yearInput');
+  yrR.addEventListener('input',e=>{year=+e.target.value; yrI.value=year; render();});
+  yrI.addEventListener('input',e=>{year=+e.target.value; yrR.value=year; render();});
+  document.getElementById('metricMode').addEventListener('change', e=>{ metric=e.target.value; render(); });
+  document.getElementById('fitBtn').addEventListener('click', fitUK);
+  document.getElementById('playBtn').addEventListener('click', togglePlay);
+
+  // Add a simple geo toggle next to metric (if you want; or keep your previous selector)
+  let geoSel = document.getElementById('geoMode');
+  if(!geoSel){
+    const wrap = document.querySelector('aside .group label')?.parentElement || document.querySelector('aside');
+    const div=document.createElement('div'); div.className='group';
+    div.innerHTML = `<label>Geography</label><select id="geoMode">
+      ${ENABLE_ITL3?'<option value="ITL3">ITL3 regions</option>':''}
+      <option value="ITL1" selected>ITL1 regions</option>
+    </select>`;
+    wrap.parentNode.insertBefore(div, wrap);
+    geoSel = div.querySelector('#geoMode');
+  }
+  geoSel.addEventListener('change', e=>{ geo=e.target.value; swapLayer(); render(); });
+
+  await loadAll();
+  computeBreaks(); // fixed bins per (geo, metric)
+  swapLayer();
+  fitUK();
+  render();
+});
+
+async function loadAll(){
+  // CSV
+  const res = await fetch(CSV_URL, {cache:'no-store'}); if(!res.ok) throw new Error('CSV fetch failed');
+  const text = await res.text();
+  rows = Papa.parse(text, {header:true, dynamicTyping:true, skipEmptyLines:true}).data || [];
+
+  // years
+  const yrs = [...new Set(rows.map(r => +r[CSV.year]))].filter(Number.isFinite).sort((a,b)=>a-b);
+  if(yrs.length){ yearBounds=[yrs[0], yrs[yrs.length-1]]; }
+  const yrR=document.getElementById('yearRange'), yrI=document.getElementById('yearInput');
+  yrR.min=yearBounds[0]; yrR.max=yearBounds[1]; yrI.min=yearBounds[0]; yrI.max=yearBounds[1];
+  year = Math.min(Math.max(year, yearBounds[0]), yearBounds[1]); yrR.value=year; yrI.value=year;
+
+  // GeoJSONs
+  const g1 = await fetch(ITL1_GEO_URL, {cache:'no-store'}); if(!g1.ok) throw new Error('ITL1 geo fetch failed'); geoITL1 = await g1.json();
+  if(ENABLE_ITL3){
+    const g3 = await fetch(ITL3_GEO_URL, {cache:'no-store'}); if(!g3.ok) throw new Error('ITL3 geo fetch failed'); geoITL3 = await g3.json();
+  }
+}
+
+// fixed bins per (geo, metric) over all years
+function computeBreaks(){
+  const valsITL1 = buildAllRatiosBy('ITL1'); // Map(year -> Map(ITL1 -> ratio)) + collects all values
+  const valsITL3 = ENABLE_ITL3 ? buildAllRatiosBy('ITL3') : null;
+
+  BREAKS.ITL1 = {};
+  MET_KEYS.forEach(m=>{
+    const arr=[]; for(const mY of valsITL1.values()) for(const v of mY[m]||[]) arr.push(v);
+    BREAKS.ITL1[m] = quantiles(arr, K);
+  });
+
+  if(ENABLE_ITL3){
+    BREAKS.ITL3 = {};
+    MET_KEYS.forEach(m=>{
+      const arr=[]; for(const mY of valsITL3.values()) for(const v of mY[m]||[]) arr.push(v);
+      BREAKS.ITL3[m] = quantiles(arr, K);
+    });
+  }
+}
+
+function buildAllRatiosBy(level){
+  // returns Map(year -> { total:[], co2:[], ch4:[], n2o:[] }) collecting all finite ratios
+  const out = new Map();
+  const yearSet = [...new Set(rows.map(r => +r[CSV.year]))].filter(Number.isFinite);
+  for(const y of yearSet){
+    const ratios = (level==='ITL1') ? ratiosITL1(y) : ratiosITL3(y);
+    const bucket = { total:[], co2:[], ch4:[], n2o:[] };
+    for(const r of ratios.values()){
+      MET_KEYS.forEach(m=>{ if(Number.isFinite(r[m])) bucket[m].push(r[m]); });
     }
+    out.set(y, bucket);
   }
   return out;
 }
 
-  
-  // ========= UI / State =========
-  const GOLD_PALETTE = ['#fff7e6','#ffe8b3','#ffd580','#ffc247','#ffae00','#d89000','#b37400','#8c5a00'];
-  const NO_DATA_FILL = '#3a4258';
-
-  let map, layer, geoITL3, geoITL1;
-  let dataRows = [];
-  let year = 2023;
-  let geoMode = 'ITL3';       // 'ITL3' | 'ITL1'
-  let metricMode = 'total';   // 'total' | 'co2' | 'ch4' | 'n2o'
-  let timer = null;
-  let yearBounds = [2015, 2023];
-
-  // Detected CSV keys (robust to header variants)
-  let CSV_KEYS = { code:null, year:null, total:null, co2:null, ch4:null, n2o:null, gva:null, itl1:null };
-
-  // Feature prop keys (we'll auto-detect once per GeoJSON)
-  let ITL3_KEYS = { codeProp:null, nameProp:null };
-  let ITL1_KEYS = { codeProp:null, nameProp:null };
-
-  // Fixed breaks by geography & metric: e.g., BREAKS.ITL3.total = [..9 values..]
-  const BREAKS = { ITL3:{ total:[], co2:[], ch4:[], n2o:[] }, ITL1:{ total:[], co2:[], ch4:[], n2o:[] } };
-
-  // ========= Init =========
-  function init(){
-    map = L.map('map', { preferCanvas:true, zoomControl:true, zoomSnap:0.25, zoomDelta:0.5 })
-      .setView([54.9, -3.5], 6);
-
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-      { attribution:'&copy; OpenStreetMap, &copy; CARTO' }).addTo(map);
-
-    // UI events
-    document.getElementById('fitBtn').addEventListener('click', fitUK);
-    document.getElementById('playBtn').addEventListener('click', togglePlay);
-
-    document.getElementById('geoMode').addEventListener('change', e=>{
-      geoMode = e.target.value;
-      swapLayer();
-      render();
-    });
-
-    document.getElementById('metricMode').addEventListener('change', e=>{
-      metricMode = e.target.value;
-      render();
-    });
-
-    const yrRange = document.getElementById('yearRange');
-    const yrInput = document.getElementById('yearInput');
-    yrRange.addEventListener('input', e=>{ year = +e.target.value; yrInput.value = year; render(); });
-    yrInput.addEventListener('input', e=>{ year = +e.target.value; yrRange.value = year; render(); });
-
-    // Load everything
-    Promise.all([loadGeoITL3(), loadGeoITL1(), loadCsv()]).then(()=>{
-      computeAllBreaks();   // build fixed scales per (geo, metric)
-      swapLayer();
-      fitUK();
-      render();
-    }).catch(err=>{
-      console.error(err);
-      alert('Failed to load one or more resources.');
+// Build Map(code -> {total,co2,ch4,n2o}) ratios for a given year at ITL3
+function ratiosITL3(y){
+  const m = new Map(); // ITL3 code -> {metrics}
+  // group by ITL3 code
+  const by = new Map();
+  for(const r of rows){ if(+r[CSV.year]!==+y) continue;
+    const code = norm(r[CSV.code]); if(!by.has(code)) by.set(code, []);
+    by.get(code).push(r);
+  }
+  for(const [code, arr] of by.entries()){
+    // In case duplicates exist, sum totals/GVA
+    let num = {total:0, co2:0, ch4:0, n2o:0}, den=0;
+    for(const r of arr){
+      num.total += +r[CSV.total] || 0;
+      num.co2   += +r[CSV.co2]   || 0;
+      num.ch4   += +r[CSV.ch4]   || 0;
+      num.n2o   += +r[CSV.n2o]   || 0;
+      den       += +r[CSV.gva]   || 0;
+    }
+    m.set(code, {
+      total: den? num.total/den : NaN,
+      co2:   den? num.co2/den   : NaN,
+      ch4:   den? num.ch4/den   : NaN,
+      n2o:   den? num.n2o/den   : NaN
     });
   }
+  return m;
+}
 
-  // ========= Loaders =========
-  async function loadGeoITL3(){
-    const res = await fetch(GEO_ITL3_URL, { cache:'no-store' });
-    if(!res.ok) throw new Error('ITL3 GeoJSON fetch failed: '+res.status);
-    geoITL3 = await res.json();
-    ITL3_KEYS = detectFeatureKeys(geoITL3);
-    console.log('ITL3 feature keys:', ITL3_KEYS);
+// Build Map(ITL1 -> {…}) for a given year by aggregating children ITL3
+function ratiosITL1(y){
+  const agg = new Map(); // ITL1 -> {num:{…}, den}
+  for(const r of rows){
+    if(+r[CSV.year]!==+y) continue;
+    const reg = norm(r[CSV.itl1]);
+    if(!agg.has(reg)) agg.set(reg, {num:{total:0,co2:0,ch4:0,n2o:0}, den:0});
+    const a = agg.get(reg);
+    a.num.total += +r[CSV.total] || 0;
+    a.num.co2   += +r[CSV.co2]   || 0;
+    a.num.ch4   += +r[CSV.ch4]   || 0;
+    a.num.n2o   += +r[CSV.n2o]   || 0;
+    a.den       += +r[CSV.gva]   || 0;
   }
+  const m = new Map();
+  for(const [reg,a] of agg.entries()){
+    const d=a.den||0;
+    m.set(reg, {
+      total: d? a.num.total/d : NaN,
+      co2:   d? a.num.co2/d   : NaN,
+      ch4:   d? a.num.ch4/d   : NaN,
+      n2o:   d? a.num.n2o/d   : NaN
+    });
+  }
+  return m;
+}
 
-  async function loadGeoITL1(){
-  const res = await fetch(GEO_ITL1_URL, { cache:'no-store' });
-  if(!res.ok) throw new Error('ITL1 GeoJSON fetch failed: '+res.status);
-  geoITL1 = await res.json();
+function quantiles(values, k){
+  const v = values.filter(Number.isFinite).sort((a,b)=>a-b);
+  if(!v.length) return [];
+  const qs=[]; for(let i=0;i<=k;i++){ const p=i/k; const idx = Math.floor(p*(v.length-1)); qs.push(v[idx]); }
+  return qs;
+}
 
-  // Default detection first
-  ITL1_KEYS = detectFeatureKeys(geoITL1);
+function colorFor(val, breaks){
+  if(!Number.isFinite(val) || !breaks.length) return NO_DATA_FILL;
+  for(let i=0;i<PALETTE.length;i++){ if(val <= breaks[i+1]) return PALETTE[i]; }
+  return PALETTE[PALETTE.length-1];
+}
 
-  // Try to find the property whose values look like TLC..TLN
-  if (geoITL1.features && geoITL1.features.length){
-    const test = (val)=> typeof val === 'string' && /^TL[A-N]$/i.test(val.trim());
-
-    // Score each property by how many features match the TLx pattern
-    const props = Object.keys(geoITL1.features[0].properties || {});
-    const scores = {};
-    for (const p of props){
-      let count = 0;
-      for (let i=0; i<geoITL1.features.length; i++){
-        const v = geoITL1.features[i].properties[p];
-        if (test(v)) count++;
-        if (i > 50) break; // sample first 50 to be quick
-      }
-      scores[p] = count;
-    }
-
-    // Pick the property with the highest TLx hit count
-    let bestProp = null, bestScore = -1;
-    for (const [p, s] of Object.entries(scores)){
-      if (s > bestScore){ bestScore = s; bestProp = p; }
-    }
-
-    if (bestScore > 0){
-      ITL1_KEYS.codeProp = bestProp;
-    }
-
-    // Try to pick a readable name prop if we can (fallback to existing)
-    // Prefer something with 'NM'/'NAME' in it.
-    const nameCandidate = props.find(k => /(^|_)NM($|_)/i.test(k) || /name/i.test(k));
-    if (nameCandidate) ITL1_KEYS.nameProp = nameCandidate;
-
-    console.log('ITL1 keys (final):', ITL1_KEYS, 'sample props:', geoITL1.features[0].properties);
+function swapLayer(){
+  if(layer) map.removeLayer(layer);
+  if(geo==='ITL1'){
+    layer = L.geoJSON(geoITL1, { style: baseStyle, onEachFeature:(f,l)=>bindFeature(f,l,ITL1_CODE_PROP,ITL1_NAME_PROP) }).addTo(map);
+  }else{
+    if(!ENABLE_ITL3){ geo='ITL1'; return swapLayer(); }
+    layer = L.geoJSON(geoITL3, { style: baseStyle, onEachFeature:(f,l)=>bindFeature(f,l,ITL3_CODE_PROP,ITL3_NAME_PROP) }).addTo(map);
   }
 }
 
-
-  function loadCsv(){
-    return new Promise((resolve, reject)=>{
-      Papa.parse(CSV_URL, {
-        download:true, header:true, dynamicTyping:true, skipEmptyLines:true,
-        complete: (results)=>{
-          const rows = (results.data||[]);
-          if (!rows.length) { return reject(new Error('CSV parsed but no rows')); }
-
-          CSV_KEYS = detectCsvColumns(rows[0]);
-          console.log('Detected CSV columns:', CSV_KEYS);
-          if (!CSV_KEYS.code || !CSV_KEYS.year || !CSV_KEYS.total || !CSV_KEYS.co2 || !CSV_KEYS.ch4 || !CSV_KEYS.n2o || !CSV_KEYS.gva || !CSV_KEYS.itl1) {
-            return reject(new Error('Missing required CSV columns.'));
-          }
-
-          dataRows = rows.filter(r => r[CSV_KEYS.code]!=null && r[CSV_KEYS.year]!=null);
-          // Year bounds
-          const yrs = [...new Set(dataRows.map(r=> +r[CSV_KEYS.year]))].filter(Number.isFinite).sort((a,b)=>a-b);
-          if (yrs.length) {
-            yearBounds = [Math.min(...yrs), Math.max(...yrs)];
-            const [minY,maxY] = yearBounds;
-            const yrRange = document.getElementById('yearRange');
-            const yrInput = document.getElementById('yearInput');
-            yrRange.min=minY; yrRange.max=maxY; yrInput.min=minY; yrInput.max=maxY;
-            if(+yrRange.value<minY || +yrRange.value>maxY){ yrRange.value=maxY; yrInput.value=maxY; year=maxY; }
-          }
-          console.log(`CSV loaded: ${dataRows.length} rows, years ${yearBounds[0]}–${yearBounds[1]}`);
-          resolve();
-        },
-        error: (err)=> reject(err)
-      });
-    });
-  }
-
-  // ========= Detection utilities =========
-  function normaliseKey(k){
-    return String(k||'').toLowerCase().replace(/[^a-z0-9]+/g,'')
-      .replace(/co₂|co2e/g,'co2').replace(/n20/g,'n2o'); // treat N20 as N2O
-  }
-  function findKey(candidates, row){
-    const keys = Object.keys(row);
-    const normMap = new Map(keys.map(k=> [normaliseKey(k), k]));
-    for (const cand of candidates){
-      const norm = normaliseKey(cand);
-      if (normMap.has(norm)) return normMap.get(norm);
-    }
-    // loose contains
-    for (const [nk, orig] of normMap.entries()){
-      for (const c of candidates){
-        const nc = normaliseKey(c);
-        if (nk.includes(nc)) return orig;
-      }
-    }
-    return null;
-  }
-  function detectCsvColumns(sampleRow){
-    const code  = findKey(['code','itl3','itl3cd','itlcode','geogcode','area','areacode'], sampleRow);
-    const year  = findKey(['year','yyyy','yr'], sampleRow);
-    const total = findKey(['total','totalghg','ghg','ktco2e'], sampleRow);
-    const co2   = findKey(['co2'], sampleRow);
-    const ch4   = findKey(['ch4','methane'], sampleRow);
-    const n2o   = findKey(['n2o','nitrousoxide','n20'], sampleRow); // accepts N20
-    const gva   = findKey(['gva','gvacv','gva_chained','gva_volume'], sampleRow);
-    const itl1  = findKey(['itl1','itl1cd','itl1code','region'], sampleRow);
-    return { code, year, total, co2, ch4, n2o, gva, itl1 };
-  }
-
-  function detectFeatureKeys(geojson){
-    // Heuristic: pick the first feature and choose the first prop that looks like a code (has letters+digits).
-    const f = geojson.features?.[0];
-    const props = f?.properties || {};
-    const keys = Object.keys(props);
-    // Prefer common names
-    let codeProp = keys.find(k=>/^ITL.*CD$/i.test(k)) || keys.find(k=>/CODE$/i.test(k)) || keys.find(k=>/CD$/i.test(k)) || keys[0];
-    let nameProp = keys.find(k=>/^ITL.*NM$/i.test(k)) || keys.find(k=>/NAME$/i.test(k)) || keys.find(k=>/NM$/i.test(k)) || keys[1] || keys[0];
-    return { codeProp, nameProp };
-  }
-
-  // ========= Breaks / stats =========
-  function getQuantileBreaks(values, k=GOLD_PALETTE.length){
-    const v = values.filter(Number.isFinite).slice().sort((a,b)=>a-b);
-    if(!v.length) return [];
-    const qs = [];
-    for(let i=0;i<=k;i++){
-      const p = i/k;
-      const idx = Math.floor(p*(v.length-1));
-      qs.push(v[idx]);
-    }
-    return qs;
-  }
-
-  // Compute fixed breaks per (geo, metric) across ALL years
- function computeAllBreaks(){
-  ['ITL3','ITL1'].forEach(g=>{
-    ['total','co2','ch4','n2o'].forEach(m=>{
-      const vals = getAllRatiosAcrossYears(g, m);
-      BREAKS[g][m] = getQuantileBreaks(vals, GOLD_PALETTE.length);
-    });
-  });
-  console.log('Fixed breaks:', BREAKS);
+function baseStyle(){ return { color:'#9fb6e6', weight:1.1, fillColor:NO_DATA_FILL, fillOpacity:0.9 }; }
+function bindFeature(f, l, codeProp, nameProp){
+  l.on({ mouseover:e=>{ e.target.setStyle({weight:2,color:'#fff',fillColor:e.target._currentFill,fillOpacity:1}); },
+         mouseout:e=>{ e.target.setStyle({weight:1.1,color:'#9fb6e6',fillColor:e.target._currentFill,fillOpacity:0.9}); },
+         click:()=> map.fitBounds(l.getBounds(), {maxZoom:9}) });
+  l._codeProp = codeProp; l._nameProp = nameProp;
 }
 
-
-  function getRatiosForYear(geo, metric, y){
-  const mKey   = CSV_KEYS[metric];   // 'total'|'co2'|'ch4'|'n2o' → CSV key
-  const codeKey= CSV_KEYS.code;      // ITL3 code
-  const yearKey= CSV_KEYS.year;
-  const gvaKey = CSV_KEYS.gva;
-  const itl1Key= CSV_KEYS.itl1;      // ITL1 code in CSV
-
-  if (geo === 'ITL3'){
-    const m = new Map();  // ITL3 code -> ratio
-    for (const r of dataRows){
-      if (+r[yearKey] !== +y) continue;
-      const code = String(r[codeKey]).trim();
-      const num  = +r[mKey];
-      const den  = +r[gvaKey];
-      m.set(code, (Number.isFinite(num) && Number.isFinite(den) && den !== 0) ? num/den : NaN);
-    }
-    return m;
-  } else {
-    // Aggregate to ITL1: sum numerators/denominators across ITL3 children
-    const agg = new Map(); // ITL1 -> {num, den}
-    for (const r of dataRows){
-      if (+r[yearKey] !== +y) continue;
-      const itl1 = normITL1(r[itl1Key]);  // <<< normalise here
-      const num  = +r[mKey];
-      const den  = +r[gvaKey];
-      if (!agg.has(itl1)) agg.set(itl1, {num:0, den:0});
-      if (Number.isFinite(num)) agg.get(itl1).num += num;
-      if (Number.isFinite(den)) agg.get(itl1).den += den;
-    }
-    const m = new Map();
-    for (const [k, nd] of agg.entries()){
-      m.set(k, (nd.den !== 0) ? nd.num/nd.den : NaN);
-    }
-    return m;
-  }
-}
-
-  // ========= Ratio builders =========
-  // Returns Map(code -> ratio) for chosen geography, metric, year
-  function getRatiosForYear(geo, metric, y){
-    const mKey = CSV_KEYS[metric];   // 'total'|'co2'|'ch4'|'n2o' → CSV key
-    const codeKey = CSV_KEYS.code;
-    const yearKey = CSV_KEYS.year;
-    const gvaKey  = CSV_KEYS.gva;
-    const itl1Key = CSV_KEYS.itl1;
-
-    if (geo === 'ITL3'){
-      const m = new Map();
-      for (const r of dataRows){
-        if (+r[yearKey] !== +y) continue;
-        const code = String(r[codeKey]).trim();
-        const num = +r[mKey];
-        const den = +r[gvaKey];
-        m.set(code, (Number.isFinite(num) && Number.isFinite(den) && den !== 0) ? num/den : NaN);
-      }
-      return m;
-    } else { // ITL1 aggregate
-      const agg = new Map(); // ITL1 -> {num, den}
-      for (const r of dataRows){
-        if (+r[yearKey] !== +y) continue;
-        const itl1 = String(r[itl1Key]).trim();
-        const num = +r[mKey];
-        const den = +r[gvaKey];
-        if (!agg.has(itl1)) agg.set(itl1, {num:0, den:0});
-        if (Number.isFinite(num)) agg.get(itl1).num += num;
-        if (Number.isFinite(den)) agg.get(itl1).den += den;
-      }
-      const m = new Map();
-      for (const [k, nd] of agg.entries()){
-        m.set(k, (nd.den !== 0) ? nd.num/nd.den : NaN);
-      }
-      return m;
-    }
-  }
-
-  // ========= Map helpers =========
-  function baseStyle(){ return { color:'#1e2a44', weight:0.6, fillColor:NO_DATA_FILL, fillOpacity:0.9 } }
-
-  function bindFeature(f, l, keys){
-    l.on({ mouseover: onHover, mouseout: onOut, click: ()=> map.fitBounds(l.getBounds(), { maxZoom:9 }) });
-    l._currentFill = NO_DATA_FILL;
-    // no tooltip here; added in render()
-  }
-
-  function onHover(e){ const l=e.target; l.setStyle({ weight:2, color:'#ffffff', fillColor:l._currentFill, fillOpacity:1 }); if(l.openTooltip) l.openTooltip(); }
-  function onOut(e){ const l=e.target; l.setStyle({ weight:0.6, color:'#1e2a44', fillColor:l._currentFill, fillOpacity:0.9 }); }
-
-  function colorFor(val, breaks){
-    if(!Number.isFinite(val) || !breaks.length) return NO_DATA_FILL;
-    for(let i=0;i<GOLD_PALETTE.length;i++){
-      if(val <= breaks[i+1]) return GOLD_PALETTE[i];
-    }
-    return GOLD_PALETTE[GOLD_PALETTE.length-1];
-  }
-
-  function fmt(x){ return Number.isFinite(x)? x.toFixed(3) : '—'; }
-
-  function metricLabel(){
-    switch(metricMode){
-      case 'co2': return 'CO₂ (kt CO₂e) per £1m GVA';
-      case 'ch4': return 'CH₄ (kt CO₂e) per £1m GVA';
-      case 'n2o': return 'N₂O (kt CO₂e) per £1m GVA';
-      default:    return 'Total GHG (kt CO₂e) per £1m GVA';
-    }
-  }
-
-  // ========= Layer swapping =========
-  function swapLayer(){
-    if(layer) { map.removeLayer(layer); layer = null; }
-    if (geoMode === 'ITL3'){
-      layer = L.geoJSON(geoITL3, {
-        style: baseStyle,
-        onEachFeature: (f, l)=> bindFeature(f, l, ITL3_KEYS)
-      }).addTo(map);
-    } else {
-      layer = L.geoJSON(geoITL1, {
-        style: baseStyle,
-        onEachFeature: (f, l)=> bindFeature(f, l, ITL1_KEYS)
-      }).addTo(map);
-    }
-  }
-
-  // ========= Render =========
- function render(){
-  if(!map || !layer) return;
+function render(){
+  if(!layer) return;
   document.getElementById('kpi-year').textContent = year;
+  const breaks = BREAKS[geo][metric] || [];
+  const vals   = (geo==='ITL1') ? ratiosITL1(year) : ratiosITL3(year);
 
-  const breaks = BREAKS[geoMode][metricMode] || [];
-  const vals   = getRatiosForYear(geoMode, metricMode, year);
-
-  const keys   = (geoMode==='ITL3') ? ITL3_KEYS : ITL1_KEYS;
-  const codeP  = keys.codeProp, nameP = keys.nameProp;
-
-  let matched = 0, total = 0, firstFewMisses = [];
-
+  let matched=0, total=0;
   layer.eachLayer(l=>{
     total++;
-    const f    = l.feature;
-    const rawC = f.properties[codeP];
-    const code = (geoMode==='ITL1') ? normITL1(rawC) : String(rawC).trim();  // <<< normalise ITL1 feature codes
-    const name = String(f.properties[nameP]);
-
-    const v    = vals.get(code);
-    const fill = colorFor(v, breaks);
-    l._currentFill = fill;
-    l.setStyle({ fillColor: fill });
-
-    const valTxt = Number.isFinite(v) ? v.toFixed(3) : 'No data';
-    l.bindTooltip(
-      `<div><strong>${name}</strong><br/><span class="note">${code}</span><br/>${metricLabel()}: <strong>${valTxt}</strong></div>`,
-      { sticky:true, opacity:0.95, className:'tooltip' }
-    );
-
-    if (Number.isFinite(v)) matched++;
-    else if (firstFewMisses.length < 5) firstFewMisses.push({code, name});
+    const f=l.feature; const code = norm(f.properties[l._codeProp]); const name = String(f.properties[l._nameProp]||'');
+    const rec = vals.get(code); const v = rec ? rec[metric] : NaN;
+    const fill = colorFor(v, breaks); l._currentFill = fill; l.setStyle({fillColor:fill});
+    const txt = Number.isFinite(v) ? v.toFixed(3) : 'No data';
+    l.bindTooltip(`<div><strong>${name}</strong><br/><span class="note">${code}</span><br/>${metricLabel(metric)}: <strong>${txt}</strong></div>`,
+      {sticky:true, opacity:0.95, className:'tooltip'});
+    if(Number.isFinite(v)) matched++;
   });
-
-  console.log(`Render ${geoMode}/${metricMode} ${year}: matched ${matched} of ${total}`);
-  if (matched === 0 && total > 0){
-    console.warn('Example unmatched ITL1 codes:', firstFewMisses);
-    // Also print a sample of CSV ITL1 codes so you can eyeball:
-    const sampleCsv = [...new Set(
-      dataRows.filter(r=> +r[CSV_KEYS.year]===+year).map(r=> normITL1(r[CSV_KEYS.itl1]))
-    )].slice(0,10);
-    console.warn('Sample CSV ITL1 codes for this year:', sampleCsv);
-  }
-
   updateLegend(breaks);
+  // console.log(`Render ${geo}/${metric} ${year}: matched ${matched} of ${total}`);
 }
 
-  function updateLegend(breaks){
-    const el = document.getElementById('legend');
-    let html = `<div style="margin-bottom:6px;font-weight:700;text-transform:uppercase;">
-      ${metricLabel()} — ${geoMode} (fixed scale, ${yearBounds[0]}–${yearBounds[1]})
-    </div>`;
-    if(!breaks.length){
-      html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span> No data</div>`;
-      el.innerHTML = html; return;
-    }
-    for(let i=0;i<GOLD_PALETTE.length;i++){
-      const a = breaks[i], b = breaks[i+1];
-      if(a==null || b==null) continue;
-      html += `<div class="row"><span class="swatch" style="background:${GOLD_PALETTE[i]}"></span> ${fmt(a)} – ${fmt(b)}</div>`;
-    }
-    html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span> No data</div>`;
-    el.innerHTML = html;
+function updateLegend(breaks){
+  const el=document.getElementById('legend');
+  let html = `<div style="margin-bottom:6px;font-weight:700;text-transform:uppercase;">${metricLabel(metric)} — ${geo} (fixed scale, ${yearBounds[0]}–${yearBounds[1]})</div>`;
+  if(!breaks.length){ html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span> No data</div>`; el.innerHTML=html; return; }
+  for(let i=0;i<PALETTE.length;i++){ const a=breaks[i], b=breaks[i+1]; if(a==null||b==null) continue;
+    html += `<div class="row"><span class="swatch" style="background:${PALETTE[i]}"></span> ${a.toFixed(3)} – ${b.toFixed(3)}</div>`;
   }
+  html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span> No data</div>`;
+  el.innerHTML = html;
+}
 
-  // ========= Map utils =========
-  function fitUK(){
-    if (!layer) return;
-    const bounds = layer.getBounds();
-    const tight = bounds.pad(-0.05);
-    map.fitBounds(tight, { padding:[20,20] });
-  }
-
-  function togglePlay(){
-    const btn = document.getElementById('playBtn');
-    if(timer){ clearInterval(timer); timer = null; btn.textContent = '▶ Play year'; return; }
-    btn.textContent = '⏸ Pause';
-    const [minY, maxY] = yearBounds;
-    timer = setInterval(()=>{
-      year = (year >= maxY) ? minY : (year + 1);
-      document.getElementById('yearRange').value = year;
-      document.getElementById('yearInput').value = year;
-      render();
-    }, 1200);
-  }
-
-  window.addEventListener('DOMContentLoaded', init);
+function fitUK(){ if(!layer) return; const tight = layer.getBounds().pad(-0.05); map.fitBounds(tight, {padding:[20,20]}); }
+let timer=null;
+function togglePlay(){
+  const btn=document.getElementById('playBtn');
+  if(timer){ clearInterval(timer); timer=null; btn.textContent='▶ Play year'; return; }
+  btn.textContent='⏸ Pause';
+  const [minY,maxY]=yearBounds;
+  timer=setInterval(()=>{ year = (year>=maxY)?minY:(year+1); document.getElementById('yearRange').value=year; document.getElementById('yearInput').value=year; render(); }, 1200);
+}
 </script>
