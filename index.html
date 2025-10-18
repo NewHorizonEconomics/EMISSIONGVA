@@ -260,12 +260,50 @@ select {
   }
 
   async function loadGeoITL1(){
-    const res = await fetch(GEO_ITL1_URL, { cache:'no-store' });
-    if(!res.ok) throw new Error('ITL1 GeoJSON fetch failed: '+res.status);
-    geoITL1 = await res.json();
-    ITL1_KEYS = detectFeatureKeys(geoITL1);
-    console.log('ITL1 feature keys:', ITL1_KEYS);
+  async function loadGeoITL1(){
+  const res = await fetch(GEO_ITL1_URL, { cache:'no-store' });
+  if(!res.ok) throw new Error('ITL1 GeoJSON fetch failed: '+res.status);
+  geoITL1 = await res.json();
+
+  // Default detection first
+  ITL1_KEYS = detectFeatureKeys(geoITL1);
+
+  // Try to find the property whose values look like TLC..TLN
+  if (geoITL1.features && geoITL1.features.length){
+    const test = (val)=> typeof val === 'string' && /^TL[A-N]$/i.test(val.trim());
+
+    // Score each property by how many features match the TLx pattern
+    const props = Object.keys(geoITL1.features[0].properties || {});
+    const scores = {};
+    for (const p of props){
+      let count = 0;
+      for (let i=0; i<geoITL1.features.length; i++){
+        const v = geoITL1.features[i].properties[p];
+        if (test(v)) count++;
+        if (i > 50) break; // sample first 50 to be quick
+      }
+      scores[p] = count;
+    }
+
+    // Pick the property with the highest TLx hit count
+    let bestProp = null, bestScore = -1;
+    for (const [p, s] of Object.entries(scores)){
+      if (s > bestScore){ bestScore = s; bestProp = p; }
+    }
+
+    if (bestScore > 0){
+      ITL1_KEYS.codeProp = bestProp;
+    }
+
+    // Try to pick a readable name prop if we can (fallback to existing)
+    // Prefer something with 'NM'/'NAME' in it.
+    const nameCandidate = props.find(k => /(^|_)NM($|_)/i.test(k) || /name/i.test(k));
+    if (nameCandidate) ITL1_KEYS.nameProp = nameCandidate;
+
+    console.log('ITL1 keys (final):', ITL1_KEYS, 'sample props:', geoITL1.features[0].properties);
   }
+}
+
 
   function loadCsv(){
     return new Promise((resolve, reject)=>{
