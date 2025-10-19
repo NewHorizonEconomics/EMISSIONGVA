@@ -182,6 +182,10 @@ select {
     </main>
   </div>
 
+  <script src="https://unpkg.com/proj4@2.9.2/dist/proj4.js" defer></script>
+<script src="https://unpkg.com/proj4leaflet@1.0.2/src/proj4leaflet.js" defer></script>
+
+  
 <script defer>
 // ============== CONFIG YOU CONTROL ==============
 const CSV_URL        = '/data/data.csv';                 // Code,Year,Total,CO2,CH4,N2O(or N20),GVA,ITL1
@@ -251,7 +255,45 @@ function detectCsvKeys(sampleRow){
   };
   return keys;
 }
+// --- Reproject EPSG:27700 (OSGB36 / BNG) GeoJSON -> WGS84 ---
+const EPSG27700_DEF =
+  '+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 ' +
+  '+ellps=airy +towgs84=446.448,-125.157,542.06,0.1502,0.2470,0.8421,-20.4894 +units=m +no_defs';
 
+// climb into the first numeric coordinate to test scale
+function firstXY(coords){
+  if (!coords) return null;
+  if (typeof coords[0] === 'number') return coords;
+  for (const c of coords) { const v = firstXY(c); if (v) return v; }
+  return null;
+}
+function isLikelyBNG(geo){
+  try{
+    const xy = firstXY(geo?.features?.[0]?.geometry?.coordinates);
+    if(!xy) return false;
+    const [x,y] = xy;
+    // lat/lng should be small (|x|<=180, |y|<=90); BNG is large (hundreds of thousands)
+    return Math.abs(x) > 180 || Math.abs(y) > 90;
+  }catch{return false;}
+}
+function reproject27700toWGS84(geo){
+  if (!window.proj4) return geo; // safety
+  proj4.defs('EPSG:27700', EPSG27700_DEF);
+  const fwd = (xy) => proj4('EPSG:27700','WGS84', xy);
+  function rp(coords){
+    if (typeof coords[0] === 'number') {
+      const [x,y] = coords; const [lon,lat] = fwd([x,y]); return [lon,lat];
+    }
+    return coords.map(rp);
+  }
+  const out = JSON.parse(JSON.stringify(geo));
+  for (const f of out.features) {
+    if (f.geometry?.coordinates) f.geometry.coordinates = rp(f.geometry.coordinates);
+  }
+  return out;
+}
+
+  
 // ----------------- app bootstrap -----------------
 window.addEventListener('DOMContentLoaded', async ()=>{
   map = L.map('map',{preferCanvas:true,zoomSnap:0.25,zoomDelta:0.5}).setView([54.9,-3.5],6);
@@ -328,22 +370,32 @@ async function loadAll(){
   yrR.min=yearBounds[0]; yrR.max=yearBounds[1]; yrI.min=yearBounds[0]; yrI.max=yearBounds[1];
   year = Math.min(Math.max(year, yearBounds[0]), yearBounds[1]); yrR.value=year; yrI.value=year;
 
-  // ITL1 GeoJSON
-  const g1 = await fetch(ITL1_GEO_URL, {cache:'no-store'});
-  console.log('[NET] ITL1', ITL1_GEO_URL, g1.status);
-  if(!g1.ok) throw new Error('ITL1 geo fetch failed');
-  geoITL1 = await g1.json();
-  console.log('[ITL1] features:', Array.isArray(geoITL1?.features) ? geoITL1.features.length : 0);
-
-  // ITL3 (LAD) GeoJSON
-  if(ENABLE_ITL3){
-    const g3 = await fetch(ITL3_GEO_URL, {cache:'no-store'});
-    console.log('[NET] ITL3', ITL3_GEO_URL, g3.status);
-    if(!g3.ok) throw new Error('ITL3 geo fetch failed');
-    geoITL3 = await g3.json();
-    console.log('[ITL3] features:', Array.isArray(geoITL3?.features) ? geoITL3.features.length : 0);
-  }
+// ITL1 GeoJSON
+const g1 = await fetch(ITL1_GEO_URL, {cache:'no-store'});
+if(!g1.ok) throw new Error('ITL1 geo fetch failed');
+let rawITL1 = await g1.json();
+if (isLikelyBNG(rawITL1)) {
+  console.log('[ITL1] Detected EPSG:27700; reprojecting to WGS84…');
+  geoITL1 = reproject27700toWGS84(rawITL1);
+} else {
+  geoITL1 = rawITL1;
 }
+console.log('[ITL1] features:', geoITL1?.features?.length||0);
+
+// ITL3 (your LAD file) GeoJSON
+if (ENABLE_ITL3) {
+  const g3 = await fetch(ITL3_GEO_URL, {cache:'no-store'});
+  if(!g3.ok) throw new Error('ITL3 geo fetch failed');
+  let rawITL3 = await g3.json();
+  if (isLikelyBNG(rawITL3)) {
+    console.log('[ITL3/LAD] Detected EPSG:27700; reprojecting to WGS84…');
+    geoITL3 = reproject27700toWGS84(rawITL3);
+  } else {
+    geoITL3 = rawITL3;
+  }
+  console.log('[ITL3/LAD] features:', geoITL3?.features?.length||0);
+}
+
 
 // ---------- ratios & breaks ----------
 function ratiosITL3(y){
