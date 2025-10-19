@@ -316,7 +316,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
 computeBreaks();
 
 // Force initial view to ITL1 so you can verify it
-const geoSel = document.getElementById('geoMode');
+
 geoSel.value = 'ITL1';
 geo = 'ITL1';
 
@@ -395,7 +395,7 @@ if (ENABLE_ITL3) {
   }
   console.log('[ITL3/LAD] features:', geoITL3?.features?.length||0);
 }
-
+}
 
 // ---------- ratios & breaks ----------
 function ratiosITL3(y){
