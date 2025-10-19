@@ -252,10 +252,13 @@ window.addEventListener('DOMContentLoaded', async ()=>{
 
 async function loadAll(){
   // CSV
-  const res = await fetch(CSV_URL, {cache:'no-store'}); if(!res.ok) throw new Error('CSV fetch failed');
+  const res = await fetch(CSV_URL, {cache:'no-store'});
+  console.log('[NET] CSV', CSV_URL, res.status);
+  if(!res.ok) throw new Error('CSV fetch failed');
   const text = await res.text();
   rows = Papa.parse(text, {header:true, dynamicTyping:true, skipEmptyLines:true}).data || [];
-
+  console.log('[CSV] rows:', rows.length);
+  
   // years
   const yrs = [...new Set(rows.map(r => +r[CSV.year]))].filter(Number.isFinite).sort((a,b)=>a-b);
   if(yrs.length){ yearBounds=[yrs[0], yrs[yrs.length-1]]; }
@@ -263,10 +266,20 @@ async function loadAll(){
   yrR.min=yearBounds[0]; yrR.max=yearBounds[1]; yrI.min=yearBounds[0]; yrI.max=yearBounds[1];
   year = Math.min(Math.max(year, yearBounds[0]), yearBounds[1]); yrR.value=year; yrI.value=year;
 
-  // GeoJSONs
-  const g1 = await fetch(ITL1_GEO_URL, {cache:'no-store'}); if(!g1.ok) throw new Error('ITL1 geo fetch failed'); geoITL1 = await g1.json();
+/ ITL1
+  const g1 = await fetch(ITL1_GEO_URL, {cache:'no-store'});
+  console.log('[NET] ITL1', ITL1_GEO_URL, g1.status);
+  if(!g1.ok) throw new Error('ITL1 geo fetch failed');
+  geoITL1 = await g1.json();
+  console.log('[ITL1] features:', Array.isArray(geoITL1?.features) ? geoITL1.features.length : 0);
+
+  // ITL3
   if(ENABLE_ITL3){
-    const g3 = await fetch(ITL3_GEO_URL, {cache:'no-store'}); if(!g3.ok) throw new Error('ITL3 geo fetch failed'); geoITL3 = await g3.json();
+    const g3 = await fetch(ITL3_GEO_URL, {cache:'no-store'});
+    console.log('[NET] ITL3', ITL3_GEO_URL, g3.status);
+    if(!g3.ok) throw new Error('ITL3 geo fetch failed');
+    geoITL3 = await g3.json();
+    console.log('[ITL3] features:', Array.isArray(geoITL3?.features) ? geoITL3.features.length : 0);
   }
 }
 
