@@ -200,7 +200,7 @@ const NO_DATA_FILL = '#3a4258';
 
 let map, layer, geoITL1=null, geoITL3=null;
 let rows=[], BREAKS={ ITL1:{}, ITL3:{} };
-let year=2023, yearBounds=[2015,2023], metric='total', geo='ITL1'; // default to ITL1 since that’s your blocker
+let year=2023, yearBounds=[2015,2023], metric='total', geo='ITL3';
 const K = PALETTE.length;
 
 const CSV = { code:'Code', year:'Year', total:'Total', co2:'CO2', ch4:'CH4', n2o:'N2O', gva:'GVA', itl1:'ITL1' };
@@ -240,6 +240,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     wrap.parentNode.insertBefore(div, wrap);
     geoSel = div.querySelector('#geoMode');
   }
+  geo = geoSel.value;
   geoSel.addEventListener('change', e=>{ geo=e.target.value; swapLayer(); render(); });
 
   await loadAll();
