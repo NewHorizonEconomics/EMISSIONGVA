@@ -266,7 +266,7 @@ async function loadAll(){
   yrR.min=yearBounds[0]; yrR.max=yearBounds[1]; yrI.min=yearBounds[0]; yrI.max=yearBounds[1];
   year = Math.min(Math.max(year, yearBounds[0]), yearBounds[1]); yrR.value=year; yrI.value=year;
 
-/ ITL1
+// ITL1
   const g1 = await fetch(ITL1_GEO_URL, {cache:'no-store'});
   console.log('[NET] ITL1', ITL1_GEO_URL, g1.status);
   if(!g1.ok) throw new Error('ITL1 geo fetch failed');
