@@ -270,11 +270,18 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   geoSel.addEventListener('change', e=>{ geo=e.target.value; swapLayer(); render(); });
 
   try{
-    await loadAll();
-    computeBreaks();    // fixed per (geo, metric) over all years
-    swapLayer();        // ensure a vector layer is on the map
-    fitUK();
-    render();
+  await loadAll();
+computeBreaks();
+
+// Force initial view to ITL1 so you can verify it
+const geoSel = document.getElementById('geoMode');
+geoSel.value = 'ITL1';
+geo = 'ITL1';
+
+swapLayer();
+fitUK();
+render();
+
   }catch(err){
     console.error(err);
     alert('Failed to load one or more resources — check the console for details.');
