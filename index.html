@@ -534,7 +534,12 @@ function render(){
 
 function updateLegend(breaks){
   const el=document.getElementById('legend');
-  let html = `<div style="margin-bottom:6px;font-weight:700;text-transform:uppercase;">${metricLabel(metric)} — ${geo} (fixed scale, ${yearBounds[0]}–${yearBounds[1]})</div>`;
+  // friendly display names
+  const geoLabel = geo === 'ITL3' ? 'LAD' :
+                   geo === 'ITL1' ? 'Region' : geo;
+  let html = `<div style="margin-bottom:6px;font-weight:700;text-transform:uppercase;">
+    ${metricLabel(metric)} — ${geoLabel} (fixed scale, ${yearBounds[0]}–${yearBounds[1]})
+  </div>`;
   if(!breaks.length){ html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span> No data</div>`; el.innerHTML=html; return; }
   for(let i=0;i<PALETTE.length;i++){ const a=breaks[i], b=breaks[i+1]; if(a==null||b==null) continue;
     html += `<div class="row"><span class="swatch" style="background:${PALETTE[i]}"></span> ${a.toFixed(3)} – ${b.toFixed(3)}</div>`;
