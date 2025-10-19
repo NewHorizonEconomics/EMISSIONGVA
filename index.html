@@ -228,20 +228,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   document.getElementById('fitBtn').addEventListener('click', fitUK);
   document.getElementById('playBtn').addEventListener('click', togglePlay);
 
-  swapLayer();
-
-  try{
-    await loadAll();
-    computeBreaks();
-    swapLayer();
-    fitUK();
-    render();
-  }catch(err){
-    console.error(err);
-    alert('Failed to load one or more resources — check console for details.');
-  }
-});
-  
+ 
   // Add a simple geo toggle next to metric (if you want; or keep your previous selector)
   let geoSel = document.getElementById('geoMode');
   if(!geoSel){
