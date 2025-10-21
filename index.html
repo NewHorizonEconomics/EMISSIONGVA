@@ -121,22 +121,7 @@ select {
     .kpi{background:#0e1424;border:1px solid var(--border);border-radius:12px;padding:8px 10px}
     .kpi .v{font-size:16px;font-weight:600}
     .row-inline{display:flex;gap:8px;align-items:center}
- .legend-btn {
-  position: absolute;
-  bottom: 16px;
-  right: 16px;
-  z-index: 1100;
-  background: rgba(20,26,42,0.9);
-  border: 1px solid var(--border);
-  color: var(--text);
-  font-size: 12px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  cursor: pointer;
-}
-.legend-btn:hover {
-  background: rgba(40,46,66,0.95);
-}
+
 
   </style>
 </head>
@@ -200,7 +185,6 @@ select {
     <main style="position:relative;">
       <div id="map"></div>
       <div id="legend" class="legend"></div>
-<button id="legendToggle" class="legend-btn">Hide legend</button>
 
     </main>
   </div>
@@ -229,7 +213,8 @@ let map, layer, geoITL1=null, geoITL3=null;
 let rows=[], CSV_KEYS=null;
 let BREAKS={ ITL1:{}, ITL3:{} };
 let year=2023, yearBounds=[2015,2023], metric='total', geo='LAD'; // match your dropdown default
-const MET_KEYS = ['total','co2','ch4','n2o'];
+let legendVisible = JSON.parse(localStorage.getItem('legendVisible') ?? 'true');
+  const MET_KEYS = ['total','co2','ch4','n2o'];
 const K = PALETTE.length;
 
 // ---------- helpers ----------
@@ -358,6 +343,14 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   geo = geoSel.value; // keep script state in sync with dropdown
   geoSel.addEventListener('change', e=>{ geo=e.target.value; swapLayer(); render(); });
 
+  const legendBtn = document.getElementById('legendToggle');
+if (legendBtn) {
+  legendBtn.addEventListener('click', () => {
+    legendVisible = !legendVisible;
+    applyLegendVisibility();
+  });
+}
+
   try{
   await loadAll();
 computeBreaks();
@@ -367,6 +360,7 @@ computeBreaks();
 swapLayer();
 fitUK();
 render();
+applyLegendVisibility();
 
   }catch(err){
     console.error(err);
@@ -556,6 +550,19 @@ function swapLayer(){
   }
 }
 
+function applyLegendVisibility() {
+  const legend = document.getElementById('legend');
+  const btn = document.getElementById('legendToggle');
+  if (!legend) return;
+
+  legend.style.display = legendVisible ? 'block' : 'none';
+  if (btn) btn.textContent = legendVisible ? 'Hide legend' : 'Show legend';
+
+  // persist across reloads
+  localStorage.setItem('legendVisible', JSON.stringify(legendVisible));
+}
+
+  
 function render(){
   if(!layer) return;
   document.getElementById('kpi-year').textContent = year;
@@ -593,6 +600,8 @@ function updateLegend(breaks){
   }
   html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span> No data</div>`;
   el.innerHTML = html;
+  applyLegendVisibility();
+
 }
 
 function fitUK(){ if(!layer) return; const tight = layer.getBounds().pad(-0.05); map.fitBounds(tight, {padding:[20,20]}); }
