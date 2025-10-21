@@ -121,6 +121,23 @@ select {
     .kpi{background:#0e1424;border:1px solid var(--border);border-radius:12px;padding:8px 10px}
     .kpi .v{font-size:16px;font-weight:600}
     .row-inline{display:flex;gap:8px;align-items:center}
+ .legend-btn {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  z-index: 1100;
+  background: rgba(20,26,42,0.9);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.legend-btn:hover {
+  background: rgba(40,46,66,0.95);
+}
+
   </style>
 </head>
 <body>
@@ -179,6 +196,8 @@ select {
     <main style="position:relative;">
       <div id="map"></div>
       <div id="legend" class="legend"></div>
+<button id="legendToggle" class="legend-btn">Hide legend</button>
+
     </main>
   </div>
 
@@ -218,6 +237,18 @@ function num(x){
   const v = +s;
   return Number.isFinite(v) ? v : NaN;
 }
+  window.addEventListener('DOMContentLoaded', ()=>{
+  const legend = document.getElementById('legend');
+  const btn = document.getElementById('legendToggle');
+  if (!legend || !btn) return;
+
+  btn.addEventListener('click', ()=>{
+    const hidden = legend.style.display === 'none';
+    legend.style.display = hidden ? 'block' : 'none';
+    btn.textContent = hidden ? 'Hide legend' : 'Show legend';
+  });
+});
+
 function metricLabel(m){
   return m==='co2' ? 'CO₂ (kt CO₂e) per £1m GVA'
        : m==='ch4' ? 'CH₄ (kt CO₂e) per £1m GVA'
