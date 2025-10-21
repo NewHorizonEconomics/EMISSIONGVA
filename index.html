@@ -190,6 +190,10 @@ select {
     <button id="playBtn" class="primary" style="flex:1;">▶ Play year</button>
     <button id="fitBtn" class="primary" style="flex:1;">Reset map</button>
   </div>
+     <div class="group">
+  <button id="legendToggle" class="primary" style="width:100%;">Hide legend</button>
+</div>
+
 </aside>
 
 
@@ -237,6 +241,18 @@ function num(x){
   const v = +s;
   return Number.isFinite(v) ? v : NaN;
 }
+  window.addEventListener('DOMContentLoaded', ()=>{
+  const legend = document.getElementById('legend');
+  const btn = document.getElementById('legendToggle');
+  if (!legend || !btn) return;
+
+  btn.addEventListener('click', ()=>{
+    const hidden = legend.style.display === 'none';
+    legend.style.display = hidden ? 'block' : 'none';
+    btn.textContent = hidden ? 'Hide legend' : 'Show legend';
+  });
+});
+
   window.addEventListener('DOMContentLoaded', ()=>{
   const legend = document.getElementById('legend');
   const btn = document.getElementById('legendToggle');
