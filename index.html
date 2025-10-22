@@ -586,22 +586,38 @@ function render(){
   console.log(`Render ${geo}/${metric} ${year}: matched ${matched} of ${total}`);
 }
 
+  function fmt(x){ return Number.isFinite(x) ? x.toFixed(3) : '—'; }
+
 function updateLegend(breaks){
-  const el=document.getElementById('legend');
-  // friendly display names
-  const geoLabel = geo === 'ITL3' ? 'LAD' :
-                   geo === 'ITL1' ? 'Region' : geo;
-  let html = `<div style="margin-bottom:6px;font-weight:700;text-transform:uppercase;">
-    ${metricLabel(metric)} — ${geoLabel} (fixed scale, ${yearBounds[0]}–${yearBounds[1]})
-  </div>`;
-  if(!breaks.length){ html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span> No data</div>`; el.innerHTML=html; return; }
-  for(let i=0;i<PALETTE.length;i++){ const a=breaks[i], b=breaks[i+1]; if(a==null||b==null) continue;
-    html += `<div class="row"><span class="swatch" style="background:${PALETTE[i]}"></span> ${a.toFixed(3)} – ${b.toFixed(3)}</div>`;
+  const el = document.getElementById('legend');
+
+  // First line: metric. Second line: geography + fixed scale window.
+  const geoLabel = (typeof geo !== 'undefined' && geo === 'ITL1') ? 'Region' : 'LAD';
+  let html = `
+    <div style="margin-bottom:6px;font-weight:700;text-transform:uppercase;line-height:1.25">
+      ${metricLabel()}<br/>
+      <span style="font-weight:400;color:var(--muted)">
+        ${geoLabel} · fixed scale ${yearBounds[0]}–${yearBounds[1]}
+      </span>
+    </div>
+  `;
+
+  if(!breaks || !breaks.length){
+    html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span> No data</div>`;
+    el.innerHTML = html;
+    if (typeof applyLegendVisibility === 'function') applyLegendVisibility();
+    return;
+  }
+
+  for(let i=0;i<PALETTE.length;i++){
+    const a = breaks[i], b = breaks[i+1];
+    if(a==null || b==null) continue;
+    html += `<div class="row"><span class="swatch" style="background:${PALETTE[i]}"></span> ${fmt(a)} – ${fmt(b)}</div>`;
   }
   html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span> No data</div>`;
-  el.innerHTML = html;
-  applyLegendVisibility();
 
+  el.innerHTML = html;
+  if (typeof applyLegendVisibility === 'function') applyLegendVisibility();
 }
 
 function fitUK(){ if(!layer) return; const tight = layer.getBounds().pad(-0.05); map.fitBounds(tight, {padding:[20,20]}); }
