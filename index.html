@@ -589,6 +589,16 @@ function applyLegendVisibility() {
   localStorage.setItem('legendVisible', JSON.stringify(legendVisible));
 }
 
+  // --- unit helpers (add above render) ---
+const KTOE_TO_GWH = 11.63;
+
+const unitLabel = (u) => u === 'gwh' ? 'GWh per £1m GVA' : 'ktoe per £1m GVA';
+
+function applyUnit(v, u) {
+  if (!Number.isFinite(v)) return v;
+  return u === 'gwh' ? v * KTOE_TO_GWH : v;
+}
+
   
 function render(){
   if(!layer) return;
@@ -603,7 +613,7 @@ const baseBreaks = usingShare ? BREAKS_SHARE[geo][metric] : BREAKS[geo];
 
 // If user picked GWh, scale the intensity breaks; % breaks stay 0–100
 const legendBreaks = usingShare
-  ? (Array.isArray(baseBreaks) ? baseBreaks : percentBreaks(K))
+  ? (Array.isArray(baseBreaks) ? baseBreaks : percentBreaks(K)) // 0–100% scale
   : (Array.isArray(baseBreaks) ? baseBreaks.map(b => applyUnit(b, unit)) : []);
 
 let matched=0, total=0;
