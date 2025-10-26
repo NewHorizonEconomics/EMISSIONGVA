@@ -618,9 +618,7 @@ function render(){
 const ratios = (geo==='ITL1') ? ratiosITL1(year) : ratiosITL3(year);
 
 // Decide which breaks we use
-const usingShare = SHARE_KEYS.includes(metric);
-// Determine if current metric is a % share (CO2/CH4/N2O share of total)
-usingShare = metric.startsWith('share_');
+ usingShare = SHARE_KEYS.includes(metric);
 
   // Determine the correct break array
 let baseBreaks;
