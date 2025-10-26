@@ -613,15 +613,16 @@ function applyUnit(v, u) {
 function render(){
   if(!layer) return;
   document.getElementById('kpi-year').textContent = year;
-// Determine if current metric is a % share (CO2/CH4/N2O share of total)
-usingShare = metric.startsWith('share_');
 
   // choose source ratios + breaks (base ktoe/£1m)
 const ratios = (geo==='ITL1') ? ratiosITL1(year) : ratiosITL3(year);
 
 // Decide which breaks we use
 const usingShare = SHARE_KEYS.includes(metric);
-// Determine the correct break array
+// Determine if current metric is a % share (CO2/CH4/N2O share of total)
+usingShare = metric.startsWith('share_');
+
+  // Determine the correct break array
 let baseBreaks;
 if (usingShare) {
   baseBreaks = percentBreaks(K); // 0–100 scale for share metrics
