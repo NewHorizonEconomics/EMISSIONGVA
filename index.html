@@ -220,6 +220,7 @@ let rows=[], CSV_KEYS=null;
 let BREAKS={ ITL1:{}, ITL3:{} };
 let year=2023, yearBounds=[2015,2023], metric='total', geo='LAD'; // match your dropdown default
 let unit = 'ktoe';  // placeholder to satisfy applyUnit()
+let usingShare = false;
 
   let legendVisible = JSON.parse(localStorage.getItem('legendVisible') ?? 'true');
   const MET_KEYS = ['total','co2','ch4','n2o'];
@@ -612,6 +613,8 @@ function applyUnit(v, u) {
 function render(){
   if(!layer) return;
   document.getElementById('kpi-year').textContent = year;
+// Determine if current metric is a % share (CO2/CH4/N2O share of total)
+usingShare = metric.startsWith('share_');
 
   // choose source ratios + breaks (base ktoe/£1m)
 const ratios = (geo==='ITL1') ? ratiosITL1(year) : ratiosITL3(year);
