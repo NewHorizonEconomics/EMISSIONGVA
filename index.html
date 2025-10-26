@@ -611,12 +611,23 @@ const ratios = (geo==='ITL1') ? ratiosITL1(year) : ratiosITL3(year);
 
 // Decide which breaks we use
 const usingShare = SHARE_KEYS.includes(metric);
-const baseBreaks = usingShare ? BREAKS_SHARE[geo][metric] : BREAKS[geo];
+// Determine the correct break array
+let baseBreaks;
+if (usingShare) {
+  baseBreaks = percentBreaks(K); // 0–100 scale for share metrics
+} else {
+  baseBreaks = Array.isArray(BREAKS[geo]?.[metric])
+    ? BREAKS[geo][metric]                 // if stored per metric (like total/co2/ch4/n2o)
+    : Array.isArray(BREAKS[geo])
+      ? BREAKS[geo]                       // if stored as simple array
+      : [];                               // fallback to empty
+}
 
-// If user picked GWh, scale the intensity breaks; % breaks stay 0–100
+// Legend breaks: convert only for ktoe/GWh (intensity)
 const legendBreaks = usingShare
-  ? (Array.isArray(baseBreaks) ? baseBreaks : percentBreaks(K)) // 0–100% scale
-  : (Array.isArray(baseBreaks) ? baseBreaks.map(b => applyUnit(b, unit)) : []);
+  ? baseBreaks
+  : baseBreaks.map(b => applyUnit(b, unit));
+
 
 let matched=0, total=0;
 layer.eachLayer(l=>{
