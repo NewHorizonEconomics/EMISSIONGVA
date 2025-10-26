@@ -595,7 +595,7 @@ function render(){
   document.getElementById('kpi-year').textContent = year;
 
   // choose source ratios + breaks (base ktoe/£1m)
-const ratios = (geo==='ITL1') ? ratiosITL1(year) : ratiosLAD(year);
+const ratios = (geo==='ITL1') ? ratiosITL1(year) : ratiosITL3(year);
 
 // Decide which breaks we use
 const usingShare = SHARE_KEYS.includes(metric);
