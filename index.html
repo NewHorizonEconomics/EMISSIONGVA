@@ -602,7 +602,9 @@ const usingShare = SHARE_KEYS.includes(metric);
 const baseBreaks = usingShare ? BREAKS_SHARE[geo][metric] : BREAKS[geo];
 
 // If user picked GWh, scale the intensity breaks; % breaks stay 0–100
-const legendBreaks = usingShare ? baseBreaks : baseBreaks.map(b => applyUnit(b, unit));
+const legendBreaks = usingShare
+  ? (Array.isArray(baseBreaks) ? baseBreaks : percentBreaks(K))
+  : (Array.isArray(baseBreaks) ? baseBreaks.map(b => applyUnit(b, unit)) : []);
 
 let matched=0, total=0;
 layer.eachLayer(l=>{
