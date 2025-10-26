@@ -219,7 +219,9 @@ let map, layer, geoITL1=null, geoITL3=null;
 let rows=[], CSV_KEYS=null;
 let BREAKS={ ITL1:{}, ITL3:{} };
 let year=2023, yearBounds=[2015,2023], metric='total', geo='LAD'; // match your dropdown default
-let legendVisible = JSON.parse(localStorage.getItem('legendVisible') ?? 'true');
+let unit = 'ktoe';  // placeholder to satisfy applyUnit()
+
+  let legendVisible = JSON.parse(localStorage.getItem('legendVisible') ?? 'true');
   const MET_KEYS = ['total','co2','ch4','n2o'];
 const K = PALETTE.length;
 
