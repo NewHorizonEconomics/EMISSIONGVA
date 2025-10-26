@@ -257,20 +257,27 @@ function num(x){
     btn.textContent = hidden ? 'Hide legend' : 'Show legend';
   });
 });
-
-function metricLabel(m){
-  switch (m){
-    case 'co2':  return 'CO₂ (kt CO₂e) per £1m GVA';
-    case 'ch4':  return 'CH₄ (kt CO₂e) per £1m GVA';
-    case 'n2o':  return 'N₂O (kt CO₂e) per £1m GVA';
-    case 'total':return 'Total GHG (kt CO₂e) per £1m GVA';
-    // NEW:
-    case 'co2_share': return 'CO₂ share of area total emissions (%)';
-    case 'ch4_share': return 'CH₄ share of area total emissions (%)';
-    case 'n2o_share': return 'N₂O share of area total emissions (%)';
-    default: return String(m);
-  }
+function geoLabel(){
+  return (typeof geo === 'string' && geo.toUpperCase() === 'ITL1') ? 'ITL1 regions'
+       : 'LAD (fixed scale, ' + yearBounds[0] + '–' + yearBounds[1] + ')';
 }
+
+function metricLabel(metric, usingShare=false){
+  // % share metrics
+  if (usingShare) {
+    if (metric === 'share_co2') return 'CO₂ share of total emissions (%)';
+    if (metric === 'share_ch4') return 'CH₄ share of total emissions (%)';
+    if (metric === 'share_n2o') return 'N₂O share of total emissions (%)';
+    return 'Emissions share of total (%)';
+  }
+  // intensity metrics
+  if (metric === 'co2') return 'CO₂ (kt CO₂e) per £1m GVA';
+  if (metric === 'ch4') return 'CH₄ (kt CO₂e) per £1m GVA';
+  if (metric === 'n2o') return 'N₂O (kt CO₂e) per £1m GVA';
+  // total (default)
+  return 'Total GHG (kt CO₂e) per £1m GVA';
+}
+
 
 function quantiles(values, k){
   const v = values.filter(Number.isFinite).sort((a,b)=>a-b);
@@ -672,33 +679,43 @@ updateLegend(legendBreaks);
 
 function updateLegend(breaks){
   const el = document.getElementById('legend');
+  if (!el) return;
 
-  // First line: metric. Second line: geography + fixed scale window.
-  const geoLabel = (typeof geo !== 'undefined' && geo === 'ITL1') ? 'Region' : 'LAD';
+  // Header (bold line = metric; second line = geography + fixed scale)
   let html = `
-    <div style="margin-bottom:6px;font-weight:700;text-transform:uppercase;line-height:1.25">
-      ${metricLabel()}<br/>
-      <span style="font-weight:400;color:var(--muted)">
-        ${geoLabel} · fixed scale ${yearBounds[0]}–${yearBounds[1]}
+    <div style="margin-bottom:6px; font-weight:700; text-transform:uppercase; line-height:1.3;">
+      ${metricLabel(metric, usingShare)}<br/>
+      <span style="font-weight:400; color:var(--muted);">
+        ${geoLabel()}
       </span>
     </div>
   `;
 
-  if(!breaks || !breaks.length){
+  if (!Array.isArray(breaks) || !breaks.length){
     html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span> No data</div>`;
     el.innerHTML = html;
-    if (typeof applyLegendVisibility === 'function') applyLegendVisibility();
     return;
   }
 
-  for(let i=0;i<PALETTE.length;i++){
-    const a = breaks[i], b = breaks[i+1];
-    if(a==null || b==null) continue;
-    html += `<div class="row"><span class="swatch" style="background:${PALETTE[i]}"></span> ${fmt(a)} – ${fmt(b)}</div>`;
-  }
-  html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span> No data</div>`;
+  // number formatter: 1 dp for %, 3 dp for intensities
+  const fmtLegend = (v) => {
+    if (!Number.isFinite(v)) return '—';
+    return usingShare ? v.toFixed(1) + '%' : v.toFixed(3);
+  };
 
+  for (let i=0; i<PALETTE.length; i++){
+    const a = breaks[i], b = breaks[i+1];
+    if (a==null || b==null) continue;
+    html += `<div class="row">
+      <span class="swatch" style="background:${PALETTE[i]}"></span>
+      ${fmtLegend(a)} – ${fmtLegend(b)}
+    </div>`;
+  }
+
+  html += `<div class="row"><span class="swatch" style="background:${NO_DATA_FILL}"></span> No data</div>`;
   el.innerHTML = html;
+
+  // keep your existing show/hide state if you use it
   if (typeof applyLegendVisibility === 'function') applyLegendVisibility();
 }
 
