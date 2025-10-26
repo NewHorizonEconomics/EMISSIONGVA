@@ -166,10 +166,10 @@ select {
     <option value="total" selected>Total GHG (kt CO₂e/£1m GVA)</option>
     <option value="co2">CO₂ (kt CO₂e/£1m GVA)</option>
     <option value="ch4">CH₄ (kt CO₂e/£1m GVA)</option>
-    <option value="n2o">N₂O (kt CO₂e/£1m GVA)</option>
+    <option value="no2">NO₂ (kt CO₂e/£1m GVA)</option>
     <option value="co2_share">% CO₂ of area total</option>
 <option value="ch4_share">% CH₄ of area total</option>
-<option value="n2o_share">% N₂O of area total</option>
+<option value="no2_share">% NO₂ of area total</option>
 
   </select>
 </div>
@@ -199,11 +199,11 @@ select {
   
 <script defer>
 // ============== CONFIG YOU CONTROL ==============
-const CSV_URL        = '/data/data.csv';                 // Code,Year,Total,CO2,CH4,N2O(or N20),GVA,ITL1
+const CSV_URL        = '/data/data.csv';                 // Code,Year,Total,CO2,CH4,NO2,GVA,ITL1
 const ITL1_GEO_URL   = '/data/itl1_boundaries.geojson';  // ITL1 polygons (codes like TLC…TLN)
 const ITL3_GEO_URL   = '/data/lad_2023.geojson';         // LAD polygons (LAD23CD/LAD23NM) – used as your “ITL3” display
 const ENABLE_ITL3    = true;                             // keep true if you want the LAD layer available
-const SHARE_KEYS = ['co2_share','ch4_share','n2o_share'];   // new
+const SHARE_KEYS = ['co2_share','ch4_share','no2_share'];   // new
 
   // Property names in your GeoJSONs:
 const ITL1_CODE_PROP = 'ITL121CD';
@@ -223,7 +223,7 @@ let unit = 'ktoe';  // placeholder to satisfy applyUnit()
 let usingShare = false;
 
   let legendVisible = JSON.parse(localStorage.getItem('legendVisible') ?? 'true');
-  const MET_KEYS = ['total','co2','ch4','n2o'];
+  const MET_KEYS = ['total','co2','ch4','no2'];
 const K = PALETTE.length;
 
 // ---------- helpers ----------
@@ -268,13 +268,13 @@ function metricLabel(metric, usingShare=false){
   if (usingShare) {
     if (metric === 'share_co2') return 'CO₂ share of total emissions (%)';
     if (metric === 'share_ch4') return 'CH₄ share of total emissions (%)';
-    if (metric === 'share_n2o') return 'N₂O share of total emissions (%)';
+    if (metric === 'share_no2') return 'NO₂ share of total emissions (%)';
     return 'Emissions share of total (%)';
   }
   // intensity metrics
   if (metric === 'co2') return 'CO₂ (kt CO₂e) per £1m GVA';
   if (metric === 'ch4') return 'CH₄ (kt CO₂e) per £1m GVA';
-  if (metric === 'n2o') return 'N₂O (kt CO₂e) per £1m GVA';
+  if (metric === 'no2') return 'NO₂ (kt CO₂e) per £1m GVA';
   // total (default)
   return 'Total GHG (kt CO₂e) per £1m GVA';
 }
@@ -305,7 +305,7 @@ function detectCsvKeys(sampleRow){
     total:find(['total']),
     co2:  find(['co2']),
     ch4:  find(['ch4']),
-    n2o:  find(['n2o','n20','n₂o']),   // tolerate N20
+    no2:  find(['no2','n20','no₂']),   // tolerate N20
     gva:  find(['gva']),
     itl1: find(['itl1','itl_1'])
   };
@@ -380,8 +380,8 @@ if (legendBtn) {
 computeBreaks();
 
     // after computeBreaks();
-BREAKS_SHARE.ITL1.co2_share = BREAKS_SHARE.ITL1.ch4_share = BREAKS_SHARE.ITL1.n2o_share = percentBreaks(K);
-BREAKS_SHARE.ITL3.co2_share = BREAKS_SHARE.ITL3.ch4_share = BREAKS_SHARE.ITL3.n2o_share = percentBreaks(K);
+BREAKS_SHARE.ITL1.co2_share = BREAKS_SHARE.ITL1.ch4_share = BREAKS_SHARE.ITL1.no2_share = percentBreaks(K);
+BREAKS_SHARE.ITL3.co2_share = BREAKS_SHARE.ITL3.ch4_share = BREAKS_SHARE.ITL3.no2_share = percentBreaks(K);
 
 // Force initial view to ITL1 so you can verify it
 
@@ -410,7 +410,7 @@ async function loadAll(){
   if(!rows.length) throw new Error('CSV parsed with 0 rows');
   CSV_KEYS = detectCsvKeys(rows[0]);
   console.log('[CSV] detected keys:', CSV_KEYS);
-  const required = ['code','year','total','co2','ch4','n2o','gva','itl1'];
+  const required = ['code','year','total','co2','ch4','no2','gva','itl1'];
   const missing = required.filter(k => !CSV_KEYS[k]);
   if(missing.length){
     console.error('Missing required CSV columns:', missing);
@@ -424,7 +424,7 @@ async function loadAll(){
     total: num(r[CSV_KEYS.total]),
     co2:   num(r[CSV_KEYS.co2]),
     ch4:   num(r[CSV_KEYS.ch4]),
-    n2o:   num(r[CSV_KEYS.n2o]),
+    no2:   num(r[CSV_KEYS.no2]),
     gva:   num(r[CSV_KEYS.gva]),
     itl1:  norm(r[CSV_KEYS.itl1])
   }));
@@ -480,14 +480,14 @@ function ratiosITL3(y){
       if(Number.isFinite(r.total)) numT += r.total;
       if(Number.isFinite(r.co2))   numC += r.co2;
       if(Number.isFinite(r.ch4))   numM += r.ch4;
-      if(Number.isFinite(r.n2o))   numN += r.n2o;
+      if(Number.isFinite(r.no2))   numN += r.no2;
       if(Number.isFinite(r.gva))   den  += r.gva;
     }
     out.set(code, {
       total: den? numT/den : NaN,
       co2:   den? numC/den : NaN,
       ch4:   den? numM/den : NaN,
-      n2o:   den? numN/den : NaN
+      no2:   den? numN/den : NaN
     });
   }
   return out;
@@ -503,7 +503,7 @@ function ratiosITL1(y){
     if(Number.isFinite(r.total)) a.t += r.total;
     if(Number.isFinite(r.co2))   a.c += r.co2;
     if(Number.isFinite(r.ch4))   a.m += r.ch4;
-    if(Number.isFinite(r.n2o))   a.n += r.n2o;
+    if(Number.isFinite(r.no2))   a.n += r.no2;
     if(Number.isFinite(r.gva))   a.g += r.gva;
   }
   const out = new Map();
@@ -513,7 +513,7 @@ function ratiosITL1(y){
       total: d? a.t/d : NaN,
       co2:   d? a.c/d : NaN,
       ch4:   d? a.m/d : NaN,
-      n2o:   d? a.n/d : NaN
+      no2:   d? a.n/d : NaN
     });
   }
   return out;
@@ -523,7 +523,7 @@ function ratiosITL1(y){
 function computeBreaks(){
   const years = [...new Set(rows.map(r=>r.year))].filter(Number.isFinite);
   const collate = (fn) => {
-    const acc = { total:[], co2:[], ch4:[], n2o:[] };
+    const acc = { total:[], co2:[], ch4:[], no2:[] };
     for(const y of years){
       const m = fn(y);
       for(const obj of m.values()){
@@ -538,7 +538,7 @@ function computeBreaks(){
     total: quantiles(itl1Vals.total, K),
     co2:   quantiles(itl1Vals.co2,   K),
     ch4:   quantiles(itl1Vals.ch4,   K),
-    n2o:   quantiles(itl1Vals.n2o,   K)
+    no2:   quantiles(itl1Vals.no2,   K)
   };
   if(ENABLE_ITL3){
     const itl3Vals = collate(ratiosITL3);
@@ -546,7 +546,7 @@ function computeBreaks(){
       total: quantiles(itl3Vals.total, K),
       co2:   quantiles(itl3Vals.co2,   K),
       ch4:   quantiles(itl3Vals.ch4,   K),
-      n2o:   quantiles(itl3Vals.n2o,   K)
+      no2:   quantiles(itl3Vals.no2,   K)
     };
   }
 
@@ -626,7 +626,7 @@ if (usingShare) {
   baseBreaks = percentBreaks(K); // 0–100 scale for share metrics
 } else {
   baseBreaks = Array.isArray(BREAKS[geo]?.[metric])
-    ? BREAKS[geo][metric]                 // if stored per metric (like total/co2/ch4/n2o)
+    ? BREAKS[geo][metric]                 // if stored per metric (like total/co2/ch4/no2)
     : Array.isArray(BREAKS[geo])
       ? BREAKS[geo]                       // if stored as simple array
       : [];                               // fallback to empty
@@ -645,14 +645,14 @@ layer.eachLayer(l=>{
   const code = norm(f.properties[l._codeProp]);
   const name = String(f.properties[l._nameProp]||'');
 
-  const rec = ratios.get(code);   // {total,co2,ch4,n2o} in ktoe/£1m  OR undefined
+  const rec = ratios.get(code);   // {total,co2,ch4,no2} in ktoe/£1m  OR undefined
   let val = NaN;
 
   if (rec){
     if (usingShare){
-      // share = gas / (co2+ch4+n2o) * 100  (use gas ratios so the denominator matches)
-      const denom = (rec.co2 ?? 0) + (rec.ch4 ?? 0) + (rec.n2o ?? 0);
-      const key = metric.replace('_share',''); // 'co2' | 'ch4' | 'n2o'
+      // share = gas / (co2+ch4+no2) * 100  (use gas ratios so the denominator matches)
+      const denom = (rec.co2 ?? 0) + (rec.ch4 ?? 0) + (rec.no2 ?? 0);
+      const key = metric.replace('_share',''); // 'co2' | 'ch4' | 'no2'
       val = denom > 0 ? (100 * (rec[key] ?? 0)) / denom : NaN;
     } else {
       // intensity value in chosen unit
