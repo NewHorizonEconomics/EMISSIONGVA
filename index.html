@@ -163,10 +163,14 @@ select {
   <div class="group">
      <label>Metric</label>
   <select id="metricMode">
-    <option value="total" selected>Total GHG (CO₂e)</option>
-    <option value="co2">CO₂</option>
-    <option value="ch4">CH₄</option>
-    <option value="n2o">N₂O</option>
+    <option value="total" selected>Total GHG (kt CO₂e/£1m GVA)</option>
+    <option value="co2">CO₂ (kt CO₂e/£1m GVA)</option>
+    <option value="ch4">CH₄ (kt CO₂e/£1m GVA)</option>
+    <option value="n2o">N₂O (kt CO₂e/£1m GVA)</option>
+    <option value="co2_share">% CO₂ of area total</option>
+<option value="ch4_share">% CH₄ of area total</option>
+<option value="n2o_share">% N₂O of area total</option>
+
   </select>
 </div>
 
@@ -199,7 +203,9 @@ const CSV_URL        = '/data/data.csv';                 // Code,Year,Total,CO2,
 const ITL1_GEO_URL   = '/data/itl1_boundaries.geojson';  // ITL1 polygons (codes like TLC…TLN)
 const ITL3_GEO_URL   = '/data/lad_2023.geojson';         // LAD polygons (LAD23CD/LAD23NM) – used as your “ITL3” display
 const ENABLE_ITL3    = true;                             // keep true if you want the LAD layer available
-// Property names in your GeoJSONs:
+const SHARE_KEYS = ['co2_share','ch4_share','n2o_share'];   // new
+
+  // Property names in your GeoJSONs:
 const ITL1_CODE_PROP = 'ITL121CD';
 const ITL1_NAME_PROP = 'ITL121NM';
 const ITL3_CODE_PROP = 'LAD23CD'; // LAD file
@@ -251,11 +257,19 @@ function num(x){
 });
 
 function metricLabel(m){
-  return m==='co2' ? 'CO₂ (kt CO₂e) per £1m GVA'
-       : m==='ch4' ? 'CH₄ (kt CO₂e) per £1m GVA'
-       : m==='n2o' ? 'N₂O (kt CO₂e) per £1m GVA'
-                   : 'Total GHG (kt CO₂e) per £1m GVA';
+  switch (m){
+    case 'co2':  return 'CO₂ (kt CO₂e) per £1m GVA';
+    case 'ch4':  return 'CH₄ (kt CO₂e) per £1m GVA';
+    case 'n2o':  return 'N₂O (kt CO₂e) per £1m GVA';
+    case 'total':return 'Total GHG (kt CO₂e) per £1m GVA';
+    // NEW:
+    case 'co2_share': return 'CO₂ share of area total emissions (%)';
+    case 'ch4_share': return 'CH₄ share of area total emissions (%)';
+    case 'n2o_share': return 'N₂O share of area total emissions (%)';
+    default: return String(m);
+  }
 }
+
 function quantiles(values, k){
   const v = values.filter(Number.isFinite).sort((a,b)=>a-b);
   if(!v.length) return [];
@@ -355,13 +369,17 @@ if (legendBtn) {
   await loadAll();
 computeBreaks();
 
+    // after computeBreaks();
+BREAKS_SHARE.ITL1.co2_share = BREAKS_SHARE.ITL1.ch4_share = BREAKS_SHARE.ITL1.n2o_share = percentBreaks(K);
+BREAKS_SHARE.ITL3.co2_share = BREAKS_SHARE.ITL3.ch4_share = BREAKS_SHARE.ITL3.n2o_share = percentBreaks(K);
+
 // Force initial view to ITL1 so you can verify it
 
 swapLayer();
 fitUK();
 render();
 applyLegendVisibility();
-
+    
   }catch(err){
     console.error(err);
     alert('Failed to load one or more resources — check the console for details.');
@@ -525,6 +543,15 @@ function computeBreaks(){
   console.log('[BREAKS] ITL1', BREAKS.ITL1);
   if(ENABLE_ITL3) console.log('[BREAKS] ITL3', BREAKS.ITL3);
 }
+// NEW: fixed equal-width % breaks (0–100) using your same K bins
+function percentBreaks(K){
+  const arr=[0];
+  for(let i=1;i<=K;i++) arr.push((100*i)/K);
+  return arr;
+}
+
+// NEW: separate break store for share metrics
+const BREAKS_SHARE = { ITL1:{}, ITL3:{} };
 
 // --------------- map drawing ----------------
 function baseStyle(){ return { color:'#9fb6e6', weight:1.1, fillColor:NO_DATA_FILL, fillOpacity:0.9 }; }
@@ -567,22 +594,52 @@ function render(){
   if(!layer) return;
   document.getElementById('kpi-year').textContent = year;
 
-  const breaks = (BREAKS[geo]||{})[metric] || [];
-  const vals   = (geo==='ITL1') ? ratiosITL1(year) : ratiosITL3(year);
+  // choose source ratios + breaks (base ktoe/£1m)
+const ratios = (geo==='ITL1') ? ratiosITL1(year) : ratiosLAD(year);
 
-  let matched=0, total=0;
-  layer.eachLayer(l=>{
-    total++;
-    const f=l.feature; const code = norm(f.properties[l._codeProp]); const name = String(f.properties[l._nameProp]||'');
-    const rec = vals.get(code); const v = rec ? rec[metric] : NaN;
-    const fill = colorFor(v, breaks); l._currentFill = fill; l.setStyle({fillColor:fill});
-    const txt = Number.isFinite(v) ? v.toFixed(3) : 'No data';
-    l.bindTooltip(`<div><strong>${name}</strong><br/><span class="note">${code}</span><br/>${metricLabel(metric)}: <strong>${txt}</strong></div>`,
-      {sticky:true, opacity:0.95, className:'tooltip'});
-    if(Number.isFinite(v)) matched++;
-  });
+// Decide which breaks we use
+const usingShare = SHARE_KEYS.includes(metric);
+const baseBreaks = usingShare ? BREAKS_SHARE[geo][metric] : BREAKS[geo];
 
-  updateLegend(breaks);
+// If user picked GWh, scale the intensity breaks; % breaks stay 0–100
+const legendBreaks = usingShare ? baseBreaks : baseBreaks.map(b => applyUnit(b, unit));
+
+let matched=0, total=0;
+layer.eachLayer(l=>{
+  total++;
+  const f=l.feature;
+  const code = norm(f.properties[l._codeProp]);
+  const name = String(f.properties[l._nameProp]||'');
+
+  const rec = ratios.get(code);   // {total,co2,ch4,n2o} in ktoe/£1m  OR undefined
+  let val = NaN;
+
+  if (rec){
+    if (usingShare){
+      // share = gas / (co2+ch4+n2o) * 100  (use gas ratios so the denominator matches)
+      const denom = (rec.co2 ?? 0) + (rec.ch4 ?? 0) + (rec.n2o ?? 0);
+      const key = metric.replace('_share',''); // 'co2' | 'ch4' | 'n2o'
+      val = denom > 0 ? (100 * (rec[key] ?? 0)) / denom : NaN;
+    } else {
+      // intensity value in chosen unit
+      const base = rec[metric];            // ktoe/£1m
+      val = applyUnit(base, unit);         // ktoe or GWh per £1m
+    }
+  }
+
+  const fill = colorFor(val, legendBreaks);
+  l._currentFill = fill; l.setStyle({fillColor:fill});
+  const fmt = x => Number.isFinite(x) ? (usingShare ? x.toFixed(1)+'%' : x.toFixed(3)) : 'No data';
+  l.bindTooltip(
+    `<div><strong>${name}</strong><br/><span class="note">${code}</span><br/>${metricLabel(metric)}: <strong>${fmt(val)}</strong></div>`,
+    {sticky:true, opacity:0.95, className:'tooltip'}
+  );
+  if(Number.isFinite(val)) matched++;
+});
+
+// Use the right set of breaks for the legend too
+updateLegend(legendBreaks);
+
   console.log(`Render ${geo}/${metric} ${year}: matched ${matched} of ${total}`);
 }
 
