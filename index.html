@@ -265,9 +265,9 @@ function geoLabel(){
 
 function metricLabel(metric, usingShare=false){
   if (usingShare) {
-    if (metric === 'co2_share') return 'CO₂ share of total (%)';
-    if (metric === 'ch4_share') return 'CH₄ share of total (%)';
-    if (metric === 'no2_share') return 'N₂O share of total (%)';
+    if (metric === 'share_co2') return 'CO₂ share of total (%)';
+    if (metric === 'share_ch4') return 'CH₄ share of total (%)';
+    if (metric === 'share_no2') return 'N₂O share of total (%)';
     return 'Emissions share of total (%)';
   }
   if (metric === 'co2') return 'CO₂ (kt CO₂e) per £1m GVA';
