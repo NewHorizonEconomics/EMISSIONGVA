@@ -169,7 +169,7 @@ select {
     <option value="no2">NO₂ (kt CO₂e/£1m GVA)</option>
     <option value="co2_share">% CO₂ of area total</option>
 <option value="ch4_share">% CH₄ of area total</option>
-<option value="NO2_share">% NO₂ of area total</option>
+<option value="no2_share">% NO₂ of area total</option>
 
   </select>
 </div>
@@ -264,13 +264,18 @@ function geoLabel(){
 }
 
 function metricLabel(metric, usingShare=false){
-  // % share metrics
   if (usingShare) {
-    if (metric === 'share_co2') return 'CO₂ share of total emissions (%)';
-    if (metric === 'share_ch4') return 'CH₄ share of total emissions (%)';
-    if (metric === 'share_no2') return 'NO₂ share of total emissions (%)';
+    if (metric === 'co2_share') return 'CO₂ share of total (%)';
+    if (metric === 'ch4_share') return 'CH₄ share of total (%)';
+    if (metric === 'no2_share') return 'N₂O share of total (%)';
     return 'Emissions share of total (%)';
   }
+  if (metric === 'co2') return 'CO₂ (kt CO₂e) per £1m GVA';
+  if (metric === 'ch4') return 'CH₄ (kt CO₂e) per £1m GVA';
+  if (metric === 'no2') return 'N₂O (kt CO₂e) per £1m GVA';
+  return 'Total GHG (kt CO₂e) per £1m GVA';
+}
+
   // intensity metrics
   if (metric === 'co2') return 'CO₂ (kt CO₂e) per £1m GVA';
   if (metric === 'ch4') return 'CH₄ (kt CO₂e) per £1m GVA';
