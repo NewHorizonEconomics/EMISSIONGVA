@@ -280,14 +280,7 @@ function metricLabel(metric, usingShare=false){
 }
 
 
-  // intensity metrics
-  if (metric === 'co2') return 'CO₂ (kt CO₂e) per £1m GVA';
-  if (metric === 'ch4') return 'CH₄ (kt CO₂e) per £1m GVA';
-  if (metric === 'no2') return 'NO₂ (kt CO₂e) per £1m GVA';
-  // total (default)
-  return 'Total GHG (kt CO₂e) per £1m GVA';
-}
-
+ 
 
 function quantiles(values, k){
   const v = values.filter(Number.isFinite).sort((a,b)=>a-b);
